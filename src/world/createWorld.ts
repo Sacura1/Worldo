@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type {GameState, PlaceId} from '../../shared/types';
 import {PLACES, START_POSITION, TRUCK_POSITION} from '../../shared/types';
-import {createEnvironment,createCharacter,createTruck,disposeAssets,type Collider} from './assets';
+import {createEnvironment,createCharacter,createTruck,disposeAssets} from './assets';
+import {collidesWithWorld,WALK_RADIUS,TRUCK_RADIUS,WORLD_LIMIT} from '../../shared/world-layout';
 import type {WorldHandle,WorldInput,WorldOptions} from './types';
 
 /** Real-time rendering only. The server owns inventory, prices, time and resource awards. */
@@ -42,7 +43,7 @@ export function createWorld(container:HTMLElement,options:WorldOptions):WorldHan
  const pointerUp=(e:PointerEvent)=>{if(pointer?.id===e.pointerId)pointer=null;};const wheel=(e:WheelEvent)=>{if(paused)return;e.preventDefault();cameraDistance=THREE.MathUtils.clamp(cameraDistance+e.deltaY*.004,4.5,11);};
  renderer.domElement.addEventListener('pointerdown',pointerDown);renderer.domElement.addEventListener('pointermove',pointerMove);renderer.domElement.addEventListener('pointerup',pointerUp);renderer.domElement.addEventListener('pointercancel',pointerUp);renderer.domElement.addEventListener('wheel',wheel,{passive:false});
  const onContextLost=(e:Event)=>{e.preventDefault();contextLost=true;container.dataset.contextLost='true';};const onContextRestored=()=>{contextLost=false;delete container.dataset.contextLost;};renderer.domElement.addEventListener('webglcontextlost',onContextLost);renderer.domElement.addEventListener('webglcontextrestored',onContextRestored);
- function collision(x:number,z:number,radius:number){return environment.colliders.some((c:Collider)=>Math.abs(x-c.x)<c.w/2+radius&&Math.abs(z-c.z)<c.d/2+radius);}
+ function collision(x:number,z:number,radius:number){return collidesWithWorld({x,z},radius);}
  function nearPlace(){let closest:PlaceId|null=null,min=Infinity;for(const place of PLACES){const d=Math.hypot(playerPosition.x-place.position.x,playerPosition.z-place.position.z);if(d<(place.id==='oilfield'?30:10)&&d<min){min=d;closest=place.id;}}if(closest!==near){near=closest;options.onNear(near);}}
  function animate(now:number){
   if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min((now-last)/1000,.045);last=now;if(contextLost)return;
@@ -53,7 +54,7 @@ export function createWorld(container:HTMLElement,options:WorldOptions):WorldHan
   if(paused)speed=0;
   const turnRate=driving?1.65*Math.min(Math.abs(speed)/3,1):2.3;heading-=turn*turnRate*dt*(driving&&speed<-.2?-1:1);
   orbitOffset-=external.lookX*.003;cameraPitch=THREE.MathUtils.clamp(cameraPitch+external.lookY*.003,-.08,.65);external.lookX=external.lookY=0;
-  const nextX=THREE.MathUtils.clamp(playerPosition.x-Math.sin(heading)*speed*dt,-99,99),nextZ=THREE.MathUtils.clamp(playerPosition.z-Math.cos(heading)*speed*dt,-99,99),r=driving?.85:.28;
+  const nextX=THREE.MathUtils.clamp(playerPosition.x-Math.sin(heading)*speed*dt,-WORLD_LIMIT,WORLD_LIMIT),nextZ=THREE.MathUtils.clamp(playerPosition.z-Math.cos(heading)*speed*dt,-WORLD_LIMIT,WORLD_LIMIT),r=driving?TRUCK_RADIUS:WALK_RADIUS;
   let moved=false;if(!collision(nextX,playerPosition.z,r)){moved||=Math.abs(nextX-playerPosition.x)>.0001;playerPosition.x=nextX;}else if(driving)speed*=.86;if(!collision(playerPosition.x,nextZ,r)){moved||=Math.abs(nextZ-playerPosition.z)>.0001;playerPosition.z=nextZ;}else if(driving)speed*=.86;
   character.root.visible=!driving;character.root.position.copy(playerPosition);character.root.rotation.y=heading;
   if(driving){truck.root.position.copy(playerPosition);truck.root.rotation.y=heading;truck.root.rotation.z=THREE.MathUtils.damp(truck.root.rotation.z,-turn*speed*.002,4,dt);for(const wheel of truck.wheels)wheel.rotation.x-=speed*dt/.44;}
@@ -82,7 +83,7 @@ export function createWorld(container:HTMLElement,options:WorldOptions):WorldHan
    // predicting locally; rejected moves and other state changes still reconcile.
    if(!initialized||entering||(!options?.preservePosition&&Math.hypot(next.player.position.x-playerPosition.x,next.player.position.z-playerPosition.z)>4)){playerPosition.set(next.player.position.x,0,next.player.position.z);heading=next.player.heading;cameraYaw=heading;speed=0;initialized=true;}
    const parked=(next as GameState&{truckPosition?:{x:number;z:number}}).truckPosition;
-   if(!driving&&parked)truck.root.position.set(parked.x,0,parked.z);
+   if(!driving&&parked){truck.root.position.set(parked.x,0,parked.z);truck.root.rotation.set(0,next.truckHeading??0,0);}
    truck.cargo.visible=Object.values(next.player.inventory).reduce((a,v)=>a+v,0)>0;environment.facility.visible=next.player.facility;depositMarker.visible=next.player.discovered&&!!next.player.depositPosition;if(next.player.depositPosition)depositMarker.position.set(next.player.depositPosition.x,0,next.player.depositPosition.z);nearPlace();
   },
   setInput(input){Object.assign(external,input);},

@@ -1,4 +1,5 @@
 import {PLACES,type PlaceId,type Vec2} from '../../shared/types';
+import {ROADS} from '../../shared/world-layout';
 export function Map({position,heading,waypoint,large=false,onSelect,depositPosition}:{position:Vec2;heading:number;waypoint:PlaceId|null;large?:boolean;onSelect?:(id:PlaceId)=>void;depositPosition?:Vec2}){
  const xy=(n:number)=>(n+110)/220*300;
  const destination=waypoint==='oilfield'&&depositPosition?depositPosition:PLACES.find(p=>p.id===waypoint)?.position;
@@ -6,7 +7,7 @@ export function Map({position,heading,waypoint,large=false,onSelect,depositPosit
  <defs><pattern id={large?'grid-large':'grid-small'} width="30" height="30" patternUnits="userSpaceOnUse"><path d="M30 0H0V30" fill="none" stroke="#64705a" strokeWidth=".45"/></pattern></defs>
  <rect width="300" height="300" fill="#3c4936"/><path d="M8 4Q90 30 60 100T102 196T85 300H0V0" fill="#4c5b3d"/><path d="M270 0Q210 84 240 155T213 300H300V0" fill="#62634d"/><path d="M0 230Q70 191 140 233T300 210" stroke="#647c7a" strokeWidth="10" fill="none"/>
  <rect width="300" height="300" fill={`url(#${large?'grid-large':'grid-small'})`}/>
- <g stroke="#a69f83" strokeWidth="5" fill="none"><path d="M150 37V235M60 126H249M150 205H251M95 78L60 126M184 61L150 126"/></g><g stroke="#d1c8aa" strokeWidth="1" fill="none"><path d="M150 37V235M60 126H249M150 205H251"/></g>
+ <g stroke="#a69f83" fill="none" strokeLinecap="round">{ROADS.map(([x1,z1,x2,z2,width],i)=><path key={i} d={`M${xy(x1)} ${xy(z1)}L${xy(x2)} ${xy(z2)}`} strokeWidth={width/220*300}/>)}</g><g stroke="#d1c8aa" strokeWidth=".8" fill="none">{ROADS.filter(road=>road[4]>=6).map(([x1,z1,x2,z2],i)=><path key={i} d={`M${xy(x1)} ${xy(z1)}L${xy(x2)} ${xy(z2)}`}/>)}</g>
  {PLACES.map(place=><g key={place.id} className={large?'map-marker':''} role={large?'button':undefined} tabIndex={large?0:undefined} aria-label={large?`Navigate to ${place.name}`:undefined} onClick={()=>onSelect?.(place.id)} onKeyDown={e=>{if(e.key==='Enter')onSelect?.(place.id);}} transform={`translate(${xy(place.position.x)},${xy(place.position.z)})`}>
  <circle r={large?13:6} fill={waypoint===place.id?'#efb652':'#d2c8a9'} stroke="#30372d" strokeWidth="2"/>{large&&<><text y="4" textAnchor="middle" fill="#30372d" fontSize="12">{PLACES.indexOf(place)+1}</text><text y="26" textAnchor="middle" fill="#fff4da" fontSize="9">{place.name}</text></>}
  </g>)}

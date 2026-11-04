@@ -7,3 +7,7 @@
 
 /* Keep desktop trading text comfortably readable without crowding the world. */
 @media(min-width:901px){.objective h3{font-size:14px}.objective button{font-size:11px}.objective .eyebrow{font-size:9px}.trade-line,.trade-total>span{font-size:13px}.merchant-strip strong{font-size:11px}.panel-body .muted{font-size:13px}.price-reason{font-size:11px}.field-label{font-size:10px}.field-label select,.field-label input{font-size:13px}.fine-print{font-size:10px}}
+
+/* Notifications leave game controls and trading actions available. */
+.toast{pointer-events:none}.toast>button{pointer-events:auto}
+@media(max-width:700px){.toast{top:calc(65px + env(safe-area-inset-top));bottom:auto}}

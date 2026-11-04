@@ -43,7 +43,7 @@ NPC businesses follow explicit rules, not an LLM. Selling transfers a business�
 
 | Action | Desktop | Portrait touch |
 | --- | --- | --- |
-| Walk / drive | W/S or up/down | Joystick forward/back |
+| Walk / drive | W/S or up/down | Joystick forward/back; hold ↑ to accelerate while steering |
 | Turn / steer | A/D or left/right | Joystick left/right |
 | Run | Hold Shift while walking | Not exposed as a separate control |
 | Look | Drag the world | Drag the world |
@@ -60,7 +60,7 @@ Map markers set a destination; they do not teleport the player. Panels pause mov
 | --- | --- |
 | Practice game | Playable world, server-validated actions, production, finite merchant budgets, construction and saved progress. Each guest has an independent practice town. |
 | NEAR gameplay | Separate authenticated account state, live contract inventory/quotes, transaction review, signing and receipt display. Hidden until the required production services are configured. No real mainnet gameplay transaction has been validated as part of the current build. |
-| NEAR Intents | Supported-token discovery, signed 1Click quotes, deposit instructions and status checking. Funding arrives as **wNEAR** in the player’s wallet; explicit unwrapping and a game-contract deposit are separate steps. A quote is not evidence of a completed swap. |
+| NEAR Intents | Supported-token discovery, signed 1Click quotes, deposit instructions and status checking. Funding arrives as **wNEAR** in the player’s wallet; explicit unwrapping and a game-contract deposit are separate steps. Public token discovery and a signature-verified dry quote were checked against the deployed service on 4 November 2026. No deposit address was returned and no funds were sent; settlement remains unverified. |
 | Neon | Postgres persistence and revision-checked updates are implemented. A live Neon database has not been verified for this build. |
 | Fly | Deployed at `https://lowland-near.fly.dev/`. The public health check confirms the practice server and local persistent storage. |
 
@@ -88,12 +88,13 @@ npm run test:e2e
 
 **Build before browser tests. Stop any other server on port 3000 first** so Playwright starts the QA server for the current `dist/` build. Tests use installed Microsoft Edge on local Windows and bundled Chromium elsewhere (install it with `npx playwright install chromium`), one worker, a 1440×900 desktop viewport and a 390×844 touch viewport. Set `E2E_BASE_URL` to test a deployed practice preview instead of launching a local server. CI installs Chromium before running browser checks.
 
-Unit/API tests cover economic conservation, movement limits, private prospecting, resource caps, concurrency, session isolation, origin checks, mainnet reconciliation and authorization boundaries. Browser tests exercise desktop scouting/extraction/processing/selling and portrait touch movement/trading. Provider and chain mocks test application behavior; they do not establish production access or complete a real swap.
+Unit/API tests cover economic conservation, movement limits, private prospecting, resource caps, concurrency, session isolation, origin checks, mainnet reconciliation and authorization boundaries. Browser tests exercise desktop scouting/extraction/processing/selling, portrait touch movement/trading, and pickup driving and parking on both layouts. Provider and chain mocks test application behavior; they do not establish production access or complete a real swap.
 
-On **4 November 2026**, remote Chromium browser verification against the deployed practice preview passed **two actual scenarios**, with **two intentional platform skips**, no failures and no flaky results:
+On **4 November 2026**, remote Chromium verification against the deployed practice preview recorded **four successful browser scenarios** across the resource-loop run and a focused transport run. The resource-loop run had two intentional platform skips; the final transport run passed both layouts with no skips or flaky results:
 
 - **Desktop, 1440×900:** keyboard movement, scanner purchase, following directional readings to discover a hidden deposit, oil extraction, processing, selling the resulting petrol, and persistence after reload. Completed in 220.5 seconds.
 - **Portrait, 390×844:** touch-joystick movement, depot interaction, scanner purchase, and a check for horizontal page overflow. Completed in 12.4 seconds.
+- **Pickup transport, desktop and portrait:** enter through real keyboard/touch controls, accelerate, steer, stop, exit safely, reload, and re-board with parking position, heading and fuel preserved. Portrait also checks simultaneous steering/throttle, releasing the joystick while continuing to accelerate, and notifications leaving the accelerator touchable. Completed in 51.9 and 34.6 seconds respectively.
 
 The scenarios select the shipped battery-saver graphics mode. These are functional browser checks using an emulated viewport and a software GPU, not a measurement of frame rate on physical phones.
 
@@ -106,7 +107,7 @@ fly deploy --config fly.e2e.toml --remote-only --build-only \
   --build-arg QA_RUN_ID=your-unique-run-id > .local/qa-build.log 2>&1
 ```
 
-This builds a separate QA image and does not deploy it as the game. Change `QA_RUN_ID` for each run so Docker does not reuse a previous test result. The build exits with the actual test status. Its captured log contains a `WORLDO_QA_REPORT` JSON summary and bounded, chunked screenshot artifacts; `scripts/export-qa.mjs` defines the artifact format. Use a Fly app you can build into if you are not a maintainer of the supplied configuration.
+This builds a separate QA image and does not deploy it as the game. Add `--build-arg E2E_SCOPE=transport` to run only pickup transport checks. Change `QA_RUN_ID` for each run so Docker does not reuse a previous test result. The build exits with the actual test status. Its captured log contains a `WORLDO_QA_REPORT` JSON summary and bounded, chunked screenshot artifacts; `scripts/export-qa.mjs` defines the artifact format. Use a Fly app you can build into if you are not a maintainer of the supplied configuration.
 
 ```sh
 rustup target add wasm32-unknown-unknown
@@ -114,7 +115,7 @@ cargo test --locked --manifest-path contracts/Cargo.toml
 cargo build --locked --manifest-path contracts/Cargo.toml --target wasm32-unknown-unknown --release
 ```
 
-The remote Linux image build has passed **78 application tests and 11 Rust unit tests**, compiled the contract to WASM, and passed TypeScript checking and the production client build. The Dockerfile runs both suites before packaging. Live Neon, NEAR Auth, mainnet funding and settlement require separate configured integration tests.
+The remote Linux image build has passed **101 application tests and 20 Rust unit tests**, compiled the contract to WASM, and passed TypeScript checking and the production client build. The Dockerfile runs both suites before packaging. Live Neon, NEAR Auth, mainnet funding and settlement require separate configured integration tests.
 
 ## Visuals and limits
 

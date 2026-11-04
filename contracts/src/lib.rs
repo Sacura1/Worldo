@@ -230,6 +230,27 @@ mod tests{
  fn id(s:&str)->AccountId{s.parse().unwrap()}
  fn context(who:&str,deposit:u128){let mut c=VMContextBuilder::new();c.current_account_id(id("game.near")).predecessor_account_id(id(who)).signer_account_id(id(who)).attached_deposit(NearToken::from_yoctonear(deposit));testing_env!(c.build());}
  fn setup()->Lowland{context("owner.near",0);let mut c=Lowland::new(id("owner.near"),id("oracle.near"));c.set_paused(false);context("alice.near",STORAGE+100*UNIT);c.register();context("refinery.near",STORAGE+100*UNIT);c.register();context("owner.near",0);c.register_merchant(id("refinery.near"),"refinery".into());c}
+ fn harvest_raw(c:&mut Lowland,who:&str,resource:&str,mut amount:u128){
+  while amount>0{
+   let batch=amount.min(10);let nonce=c.account(id(who)).unwrap().harvest_nonce+1;
+   context("oracle.near",0);c.grant_harvest(id(who),resource.into(),U128(batch),nonce);amount-=batch;
+  }
+ }
+ /// Construction materials come through the same harvest/processing APIs as play.
+ fn construction_materials(steel:u32,planks:u32)->Lowland{
+  let mut c=setup();
+  for (account,kind) in [("foundry.near","foundry"),("sawmill.near","sawmill")]{
+   context(account,STORAGE);c.register();context("owner.near",0);c.register_merchant(id(account),kind.into());
+  }
+  harvest_raw(&mut c,"alice.near","ore",2*steel as u128);
+  harvest_raw(&mut c,"alice.near","timber",2*planks as u128);
+  context("alice.near",1);c.process(id("foundry.near"),"ore".into(),steel);
+  context("alice.near",1);c.process(id("sawmill.near"),"timber".into(),planks);c
+ }
+ fn ledger_total(c:&Lowland)->u128{
+  ["owner.near","alice.near","bob.near","refinery.near","foundry.near","sawmill.near"].iter()
+   .filter_map(|who|c.account(id(who))).map(|account|account.balance.0).sum()
+ }
  #[test]fn deposits_preserve_principal(){let c=setup();assert_eq!(c.account(id("alice.near")).unwrap().balance.0,100*UNIT);}
  #[test]fn trades_conserve_money_and_goods(){let mut c=setup();context("oracle.near",0);c.grant_harvest(id("alice.near"),"crude".into(),U128(5),1);let before=c.get(&id("alice.near")).balance+c.get(&id("refinery.near")).balance;context("alice.near",1);c.trade(id("refinery.near"),"crude".into(),U128(5),false,U128(0));assert_eq!(before,c.get(&id("alice.near")).balance+c.get(&id("refinery.near")).balance);assert_eq!(c.mt_balance_of(id("refinery.near"),"crude".into()).0,5);assert_eq!(c.mt_supply("crude".into()).unwrap().0,5);}
  #[test]#[should_panic(expected="Only harvest oracle")]fn players_cannot_mint(){let mut c=setup();context("alice.near",0);c.grant_harvest(id("alice.near"),"crude".into(),U128(1),1);}
@@ -237,6 +258,54 @@ mod tests{
  #[test]fn buy_sell_spread_prevents_free_money(){for stock in 1..150{let cost=Lowland::total(stock,0,1,true);let returned=Lowland::total(stock-1,0,1,false);assert!(returned<cost);}}
  #[test]fn production_consumes_inputs(){let mut c=setup();context("oracle.near",0);c.grant_harvest(id("alice.near"),"crude".into(),U128(4),1);context("alice.near",1);c.process(id("refinery.near"),"crude".into(),2);assert_eq!(c.mt_supply("crude".into()).unwrap().0,0);assert_eq!(c.mt_supply("petrol".into()).unwrap().0,2);}
  #[test]fn unknown_tokens_have_no_supply(){let c=setup();assert!(c.mt_supply("missing".into()).is_none());assert!(c.mt_token(vec!["missing".into()])[0].is_none());}
+ #[test]
+ fn building_consumes_exact_materials_and_grants_only_builder_ownership(){
+  let mut c=construction_materials(12,11);let money=ledger_total(&c);let balance=c.account(id("alice.near")).unwrap().balance.0;
+  context("alice.near",1);c.build_refinery();
+  let player=c.account(id("alice.near")).unwrap();assert!(player.refinery);assert_eq!(player.inventory[4].0,2);assert_eq!(player.inventory[5].0,1);
+  assert_eq!(c.mt_supply("steel".into()).unwrap().0,2);assert_eq!(c.mt_supply("planks".into()).unwrap().0,1);
+  assert!(!c.account(id("refinery.near")).unwrap().refinery);assert_eq!(player.balance.0,balance);assert_eq!(ledger_total(&c),money);
+ }
+ #[test]
+ fn construction_needs_materials_but_no_game_balance_fee(){
+  let mut c=construction_materials(10,10);context("bob.near",STORAGE);c.register();
+  context("alice.near",1);c.mt_batch_transfer(id("bob.near"),vec!["steel".into(),"planks".into()],vec![U128(10),U128(10)],None,None);
+  assert_eq!(c.account(id("bob.near")).unwrap().balance.0,0);let money=ledger_total(&c);
+  context("bob.near",1);c.build_refinery();assert!(c.account(id("bob.near")).unwrap().refinery);
+  assert!(!c.account(id("alice.near")).unwrap().refinery);assert_eq!(c.account(id("bob.near")).unwrap().balance.0,0);assert_eq!(ledger_total(&c),money);
+ }
+ #[test]
+ #[should_panic(expected="Already built")]
+ fn duplicate_construction_is_rejected(){let mut c=construction_materials(10,10);context("alice.near",1);c.build_refinery();c.build_refinery();}
+ #[test]
+ #[should_panic(expected="Needs 10 steel and 10 planks")]
+ fn construction_rejects_insufficient_steel(){let mut c=construction_materials(9,10);context("alice.near",1);c.build_refinery();}
+ #[test]
+ #[should_panic(expected="Needs 10 steel and 10 planks")]
+ fn construction_rejects_insufficient_planks(){let mut c=construction_materials(10,9);context("alice.near",1);c.build_refinery();}
+ #[test]
+ #[should_panic]
+ fn construction_requires_one_yocto_authorization(){let mut c=construction_materials(10,10);context("alice.near",0);c.build_refinery();}
+ #[test]
+ fn owned_refining_consumes_crude_and_preserves_all_money(){
+  let mut c=construction_materials(10,10);context("alice.near",1);c.build_refinery();harvest_raw(&mut c,"alice.near","crude",6);
+  let money=ledger_total(&c);let balance=c.account(id("alice.near")).unwrap().balance.0;
+  context("alice.near",1);c.refine_owned(2);let player=c.account(id("alice.near")).unwrap();
+  assert_eq!(player.inventory[0].0,2);assert_eq!(player.inventory[3].0,2);assert!(player.refinery);
+  assert_eq!(c.mt_supply("crude".into()).unwrap().0,2);assert_eq!(c.mt_supply("petrol".into()).unwrap().0,2);
+  assert_eq!(player.balance.0,balance);assert_eq!(ledger_total(&c),money);
+ }
+ #[test]
+ #[should_panic(expected="Build a refinery first")]
+ fn one_players_refinery_does_not_authorize_another_players_production(){
+  let mut c=construction_materials(10,10);context("alice.near",1);c.build_refinery();
+  context("bob.near",STORAGE);c.register();harvest_raw(&mut c,"bob.near","crude",2);context("bob.near",1);c.refine_owned(1);
+ }
+ #[test]
+ #[should_panic(expected="Not enough crude oil")]
+ fn owned_refining_rejects_insufficient_crude(){
+  let mut c=construction_materials(10,10);context("alice.near",1);c.build_refinery();harvest_raw(&mut c,"alice.near","crude",3);context("alice.near",1);c.refine_owned(2);
+ }
  #[allow(deprecated)]
  fn resolution_context(result:PromiseResult){let mut b=VMContextBuilder::new();b.current_account_id(id("game.near")).predecessor_account_id(id("game.near")).signer_account_id(id("alice.near"));near_sdk::test_utils::testing_env_with_promise_results(b.build(),result);}
  #[test]fn transfer_call_refunds_unused_tokens(){let mut c=setup();context("oracle.near",0);c.grant_harvest(id("alice.near"),"crude".into(),U128(5),1);context("alice.near",1);c.mt_transfer(id("refinery.near"),"crude".into(),U128(5),None,None);resolution_context(PromiseResult::Successful(br#"["2"]"#.to_vec()));let used=c.mt_resolve_transfer(id("alice.near"),id("refinery.near"),vec!["crude".into()],vec![U128(5)]);assert_eq!(used[0].0,3);assert_eq!(c.mt_balance_of(id("alice.near"),"crude".into()).0,2);}

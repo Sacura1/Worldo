@@ -9,7 +9,8 @@ COPY e2e ./e2e
 COPY shared ./shared
 COPY scripts/export-qa.mjs ./scripts/export-qa.mjs
 ARG E2E_BASE_URL=https://lowland-near.fly.dev
-ENV CI=true E2E_BASE_URL=${E2E_BASE_URL} PLAYWRIGHT_JSON_OUTPUT_FILE=/qa/qa-report.json
+ARG E2E_SCOPE=all
+ENV CI=true E2E_BASE_URL=${E2E_BASE_URL} E2E_SCOPE=${E2E_SCOPE} PLAYWRIGHT_JSON_OUTPUT_FILE=/qa/qa-report.json
 ARG QA_RUN_ID=initial
 # Preserve the real test status. Artifact lines go to a redirected build log,
 # where the caller can decode selected screenshots without a QA deployment.

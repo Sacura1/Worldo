@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { PLACES } from '../../shared/types';
+import {BUILDINGS,TANKS,COUNTERS,ROADS,WORLD_COLLIDERS,type Footprint,type TankFootprint} from '../../shared/world-layout';
 
-export interface Collider {x:number;z:number;w:number;d:number;}
 export const randomGenerator=(seed:number)=>()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
 const rnd=randomGenerator(2409);
 const boxGeometry=new THREE.BoxGeometry(1,1,1);
@@ -33,7 +33,7 @@ export function getMaterials(){
  return materials;
 }
 export class Builder {
- root=new THREE.Group(); colliders:Collider[]=[];
+ root=new THREE.Group();
  box(mat:string,x:number,y:number,z:number,w:number,h:number,d:number,rx=0,ry=0,rz=0){return this.mesh(boxGeometry,mat,x,y,z,w,h,d,rx,ry,rz);}
  rounded(mat:string,x:number,y:number,z:number,w:number,h:number,d:number,rx=0,ry=0,rz=0){return this.mesh(roundedGeometry,mat,x,y,z,w,h,d,rx,ry,rz);}
  cyl(mat:string,x:number,y:number,z:number,r:number,h:number,rx=0,ry=0,rz=0){return this.mesh(cylinderGeometry,mat,x,y,z,r,h,r,rx,ry,rz);}
@@ -56,14 +56,14 @@ function barrel(b:Builder,x:number,z:number,mat='rust',y=.48){b.cyl(mat,x,y,z,.3
 function crate(b:Builder,x:number,z:number,w=1,y=.5){b.box('wood',x,y,z,w,1,w);for(const s of[-1,1]){b.box('darkWood',x+s*w*.42,y,z,.08,1.06,w+.03);b.box('darkWood',x,y+.42,z,w+.03,.08,w+.03);b.box('darkWood',x,y-.42,z,w+.03,.08,w+.03);}}
 function fence(b:Builder,x:number,z:number,length:number,ry=0){const g=new Builder();for(let i=0;i<=length;i+=2.5)g.box('wood',i,.75,0,.16,1.5,.16);g.box('wood',length/2,.55,0,length,.1,.12);g.box('wood',length/2,1.1,0,length,.1,.12);g.root.position.set(x,0,z);g.root.rotation.y=ry;b.root.add(g.root);}
 function lamp(b:Builder,x:number,z:number,ry=0){b.cyl('darkSteel',x,3,z,.08,6);b.cyl('concrete',x,.25,z,.21,.5);const dx=Math.sin(ry)*.8,dz=Math.cos(ry)*.8;b.beam('darkSteel',new THREE.Vector3(x,6,z),new THREE.Vector3(x+dx,6,z+dz),.1);b.box('cream',x+dx,5.94,z+dz,.4,.13,.6);}
-function warehouse(b:Builder,x:number,z:number,w:number,d:number,h:number,mat='wall',roof='darkRoof'){
+function warehouse(b:Builder,footprint:Footprint,h:number,mat='wall',roof='darkRoof'){
+ const {x,z,w,d}=footprint;
  b.box('concrete',x,.15,z,w+.4,.3,d+.4);b.box(mat,x,h/2+.3,z,w,h,d);
  const roofH=w*.22,angle=Math.atan2(roofH,w/2);for(const side of[-1,1])b.box(roof,x+side*w/4,h+.3+roofH/2,z,w*.55,.16,d+.8,0,0,-side*angle);
  for(const end of[-1,1]){const shape=new THREE.Shape();shape.moveTo(-w/2,0);shape.lineTo(w/2,0);shape.lineTo(0,roofH);shape.closePath();const g=new THREE.ShapeGeometry(shape);const m=new THREE.Mesh(g,getMaterials()[mat]);m.position.set(x,h+.3,z+end*d/2);if(end<0)m.rotation.y=Math.PI;b.root.add(m);}
  for(const side of[-1,1])for(let j=-d/2+.5;j<d/2;j+=2)b.box('darkSteel',x+side*w/2,h/2,z+j,.07,h,.09);
- b.colliders.push({x,z,w:w+.4,d:d+.4});
 }
-function tank(b:Builder,x:number,z:number,r=2,h=5){b.cyl('concrete',x,.2,z,r+.25,.4);b.cyl('cream',x,h/2+.4,z,r,h);b.cyl('rust',x,1.4,z,r+.015,.35);b.cyl('darkSteel',x,h+.42,z,r+.04,.12);b.sphere('cream',x,h+.44,z,r,.25,r);for(let a=0;a<Math.PI*2;a+=Math.PI/6){const dx=Math.sin(a)*r,dz=Math.cos(a)*r;b.box('steel',x+dx,h+.9,z+dz,.04,.9,.04);}b.cyl('steel',x,h+.9,z,r,.03);b.box('steel',x-r-.12,h/2,z,.1,h,.35);for(let i=.5;i<h;i+=.38)b.box('steel',x-r-.18,i,z,.12,.04,.55);b.colliders.push({x,z,w:r*2,d:r*2});}
+function tank(b:Builder,footprint:TankFootprint,h=5){const {x,z,r}=footprint;b.cyl('concrete',x,.2,z,r+.25,.4);b.cyl('cream',x,h/2+.4,z,r,h);b.cyl('rust',x,1.4,z,r+.015,.35);b.cyl('darkSteel',x,h+.42,z,r+.04,.12);b.sphere('cream',x,h+.44,z,r,.25,r);for(let a=0;a<Math.PI*2;a+=Math.PI/6){const dx=Math.sin(a)*r,dz=Math.cos(a)*r;b.box('steel',x+dx,h+.9,z+dz,.04,.9,.04);}b.cyl('steel',x,h+.9,z,r,.03);b.box('steel',x-r-.12,h/2,z,.1,h,.35);for(let i=.5;i<h;i+=.38)b.box('steel',x-r-.18,i,z,.12,.04,.55);}
 
 export function createCharacter(){
  const root=new THREE.Group(),body=new Builder();
@@ -99,34 +99,33 @@ export function createEnvironment(){
  const b=new Builder(),m=getMaterials();
  const ground=new THREE.Mesh(new THREE.PlaneGeometry(520,520,64,64),m.grass);ground.rotation.x=-Math.PI/2;ground.position.y=-.12;ground.receiveShadow=true;
  const p=ground.geometry.attributes.position;for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getY(i),dist=Math.hypot(x,z),fade=THREE.MathUtils.smoothstep(dist,105,155);if(dist>100)p.setZ(i,fade*(18+Math.sin(x*.035)*Math.cos(z*.04)*14+Math.sin(x*.08+z*.06)*5));}ground.geometry.computeVertexNormals();
- const roads:Array<[number,number,number,number,number]>= [[0,27,0,12,7],[0,18,37,40,6],[0,18,45,-20,7],[0,18,-40,-18,6],[45,-20,25,-65,5],[37,40,68,35,5],[-40,-18,-62,-55,4],[-35,38,0,23,4]];
  const roadSegments:{ax:number;az:number;bx:number;bz:number;width:number}[]=[];
- for(const [x1,z1,x2,z2,w]of roads){const dx=x2-x1,dz=z2-z1,len=Math.hypot(dx,dz),angle=Math.atan2(dx,dz);b.box('dirt',(x1+x2)/2,-.03,(z1+z2)/2,w+1.8,.08,len+1,0,angle);b.box('road',(x1+x2)/2,.014,(z1+z2)/2,w,.055,len+.3,0,angle);roadSegments.push({ax:x1,az:z1,bx:x2,bz:z2,width:w});if(w>=6){for(let s=10;s<len-8;s+=6)b.box('cream',x1+dx*s/len,.045,z1+dz*s/len,.08,.01,2.2,0,angle);}}
+ for(const [x1,z1,x2,z2,w]of ROADS){const dx=x2-x1,dz=z2-z1,len=Math.hypot(dx,dz),angle=Math.atan2(dx,dz);b.box('dirt',(x1+x2)/2,-.03,(z1+z2)/2,w+1.8,.08,len+1,0,angle);b.box('road',(x1+x2)/2,.014,(z1+z2)/2,w,.055,len+.3,0,angle);roadSegments.push({ax:x1,az:z1,bx:x2,bz:z2,width:w});if(w>=6){for(let s=10;s<len-8;s+=6)b.box('cream',x1+dx*s/len,.045,z1+dz*s/len,.08,.01,2.2,0,angle);}}
  // Depot is a walk-in street-front workshop, with its counter at the marked interaction point.
- warehouse(b,0,5,12,9,4.5,'wall','darkRoof');b.box('black',0,1.75,9.53,4,3.1,.04);b.box('rust',0,3.6,11.2,10,.16,3,0,0,.01);
+ warehouse(b,BUILDINGS.depot,4.5,'wall','darkRoof');b.box('black',0,1.75,9.53,4,3.1,.04);b.box('rust',0,3.6,11.2,10,.16,3,0,0,.01);
  for(const x of[-4.6,4.6])b.box('darkSteel',x,1.8,12.5,.12,3.6,.12);
  b.label('LOWLAND SUPPLY CO.',0,4.15,9.58,9,1.2);b.label('TOOLS · FUEL · PROVISIONS',0,2.8,9.65,3.7,.55);
- b.box('wood',-1.7,.64,11.8,2.8,1.28,.8);b.box('darkSteel',-1.7,1.3,11.8,3,.1,.85);
+ b.box('wood',COUNTERS.depot.x,.64,COUNTERS.depot.z,2.8,1.28,.8);b.box('darkSteel',COUNTERS.depot.x,1.3,COUNTERS.depot.z,3,.1,.85);
  for(const x of[-1.4,1.4]){b.box('darkSteel',x,1.5,9.65,.05,2.7,.3);for(let y=.4;y<2.9;y+=.65){b.box('wood',0,y,9.75,3,.07,.5);for(let n=0;n<5;n++)b.rounded(n%2?'rust':'cream',-1.1+n*.5,y+.22,9.84,.27,.4,.28);}}
  for(let i=0;i<4;i++){barrel(b,5.5+i%2*.75,10+Math.floor(i/2)*.8,i%2?'cream':'rust');crate(b,-5.4+i%2,10+Math.floor(i/2),.8);}
- b.box('concrete',0,.05,11,14,.16,5);b.colliders.push({x:-1.7,z:11.8,w:3,d:.9});
+ b.box('concrete',0,.05,11,14,.16,5);
  const depotNpc=createCharacter();depotNpc.root.position.set(-1.7,0,10.8);depotNpc.root.rotation.y=Math.PI;b.root.add(depotNpc.root);
  // Refinery, process equipment, tanks, overhead pipe rack and pump station.
- b.box('concrete',53,.03,-27,28,.16,23);warehouse(b,50,-30,9,8,4,'roof','darkRoof');
- tank(b,61,-25,2.7,7);tank(b,61,-34,2.7,7);tank(b,43,-33,2.2,5.5);
+ b.box('concrete',53,.03,-27,28,.16,23);warehouse(b,BUILDINGS.refinery,4,'roof','darkRoof');
+ tank(b,TANKS.east,7);tank(b,TANKS.north,7);tank(b,TANKS.west,5.5);
  for(const x of[47,53]){b.cyl('rust',x,7,-38,.65,14);for(let y=2;y<14;y+=2)b.cyl('cream',x,y,-38,.66,.55);b.cyl('darkSteel',x,14,-38,.78,.25);}
  for(const z of[-34,-24]){b.box('steel',54,3,z,18,.15,.2);for(const x of[46,62])b.box('steel',x,1.5,z,.15,3,.15);}
  for(const x of[52,53,54])b.cyl('rust',x,3.2,-28,.15,17,Math.PI/2);b.label('LOWLAND REFINERY',48,3.3,-19.8,8,.9);for(const x of[44,52])b.box('darkSteel',x,1.7,-20,.12,3.4,.12);
- b.box('wood',45,.7,-20,3.4,1.4,.85);b.box('steel',45,1.45,-20,3.6,.1,.95);b.colliders.push({x:45,z:-20,w:3.5,d:.9});
+ b.box('wood',COUNTERS.refinery.x,.7,COUNTERS.refinery.z,3.4,1.4,.85);b.box('steel',COUNTERS.refinery.x,1.45,COUNTERS.refinery.z,3.6,.1,.95);
  b.box('darkSteel',40,1,-18,.75,2,.75);b.box('cream',40,1.85,-17.6,.63,.3,.05);b.label('FUEL',40,2.55,-17.6,1.5,.5);
  const refNpc=createCharacter();refNpc.root.position.set(45,0,-21);refNpc.root.rotation.y=Math.PI;b.root.add(refNpc.root);
  // Sawmill: open timber yard, stacked lumber and sawing shed.
- b.box('dirt',-44,0,-25,23,.1,23);warehouse(b,-44,-30,12,8,5,'wood','roof');b.label('PINE & CO. SAWMILL',-44,4,-25.95,10,1);
+ b.box('dirt',-44,0,-25,23,.1,23);warehouse(b,BUILDINGS.sawmill,5,'wood','roof');b.label('PINE & CO. SAWMILL',-44,4,-25.95,10,1);
  for(let row=0;row<3;row++)for(let i=0;i<5-row;i++){b.cyl('trunk',-50+i*.6+row*.3,.4+row*.52,-20,.29,5,Math.PI/2);b.cyl('wood',-50+i*.6+row*.3,.4+row*.52,-17.48,.24,.025,Math.PI/2);}
  for(let i=0;i<7;i++)b.box('wood',-35,.18+i*.17,-28,3,.14,6);b.box('darkSteel',-40,.72,-18,3,1.4,.85);b.label('TIMBER YARD',-38,2.5,-23,3,.65);
  const sawNpc=createCharacter();sawNpc.root.position.set(-40,0,-19);sawNpc.root.rotation.y=Math.PI;b.root.add(sawNpc.root);
  // Foundry: industrial shed, ventilation, ore bins and metal stock.
- b.box('concrete',40,.03,47,21,.15,17);warehouse(b,40,49,12,10,6,'rust','darkRoof');b.label('EASTBANK FOUNDRY',40,4.8,43.95,10,1,Math.PI);
+ b.box('concrete',40,.03,47,21,.15,17);warehouse(b,BUILDINGS.foundry,6,'rust','darkRoof');b.label('EASTBANK FOUNDRY',40,4.8,43.95,10,1,Math.PI);
  b.cyl('darkSteel',48,7,51,.75,14);b.cyl('rust',48,14,51,.95,.4);b.box('black',40,1.8,43.94,4,3.5,.05);b.box('orange',40,1.2,43.90,2.7,2.2,.02);
  for(let i=0;i<5;i++)b.box('steel',31+i*.3,.25,46,.2,.5,4);for(let i=0;i<8;i++)b.sphere('stone',48+rnd()*4,.3+rnd()*.5,42+rnd()*4,.5+rnd()*.5,.4,.6);
  b.box('darkSteel',37,.7,40,3.2,1.4,.8);const forgeNpc=createCharacter();forgeNpc.root.position.set(37,0,41);b.root.add(forgeNpc.root);
@@ -143,7 +142,7 @@ export function createEnvironment(){
  // Town details make human-scale navigation legible.
  fence(b,12,15,18,Math.PI/2);fence(b,-15,20,18,Math.PI/2);fence(b,-55,-34,20);fence(b,38,-42,28);
  for(const [x,z]of[[6,18],[-6,-2],[21,-13],[-24,-17],[31,33],[43,-15]])lamp(b,x,z,Math.PI*.5);
- for(const x of[-12,12]){warehouse(b,x,-6,6,7,3.4,'wall','rust');b.box('glass',x,1.9,-2.46,2.6,1.1,.05);b.box('darkWood',x+1.8,1.3,-2.43,1.1,2.5,.05);}
+ for(const footprint of[BUILDINGS.westHouse,BUILDINGS.eastHouse]){const {x}=footprint;warehouse(b,footprint,3.4,'wall','rust');b.box('glass',x,1.9,-2.46,2.6,1.1,.05);b.box('darkWood',x+1.8,1.3,-2.43,1.1,2.5,.05);}
  b.label('LOWLAND',-12,3.2,-2.4,4.8,.7);b.label('WORKSHOP',12,3.2,-2.4,4.8,.7);
  for(let i=0;i<6;i++){const x=-7,z=24-i*12;b.box('trunk',x,4.2,z,.17,8.4,.17);b.box('trunk',x,7.6,z,2.4,.12,.12);if(i<5)for(const dx of[-.85,.85])b.beam('darkSteel',new THREE.Vector3(x+dx,7.8,z),new THREE.Vector3(x+dx,7.8,z-12),.018);}
  function roadDistance(x:number,z:number){let min=999;for(const s of roadSegments){const dx=s.bx-s.ax,dz=s.bz-s.az,t=THREE.MathUtils.clamp(((x-s.ax)*dx+(z-s.az)*dz)/(dx*dx+dz*dz),0,1);min=Math.min(min,Math.hypot(x-s.ax-t*dx,z-s.az-t*dz)-s.width/2);}return min;}
@@ -159,8 +158,8 @@ export function createEnvironment(){
  for(let i=0;i<18;i++)b.box('dirt',-90+i*.8,-.01,25,.22,.03,30);
  const sceneGroup=new THREE.Group();sceneGroup.add(ground,b.batch(),trees.batch(),rocks.batch(),grass.batch());
  // A modest local buildable refinery is activated when player purchases the facility.
- const facilityBuilder=new Builder();tank(facilityBuilder,-37,44,1.7,3.6);facilityBuilder.box('rust',-32,1,44,2,2,3);facilityBuilder.cyl('steel',-35,1,44,.1,5,0,0,Math.PI/2);const facility=facilityBuilder.batch();facility.visible=false;sceneGroup.add(facility);
- return {group:sceneGroup,colliders:b.colliders,facility};
+ const facilityBuilder=new Builder();tank(facilityBuilder,{x:-37,z:44,r:1.7},3.6);facilityBuilder.box('rust',-32,1,44,2,2,3);facilityBuilder.cyl('steel',-35,1,44,.1,5,0,0,Math.PI/2);const facility=facilityBuilder.batch();facility.visible=false;sceneGroup.add(facility);
+ return {group:sceneGroup,colliders:WORLD_COLLIDERS,facility};
 }
 
 export function disposeAssets(){for(const m of Object.values(materials)){m.map?.dispose();m.dispose();}for(const k of Object.keys(materials))delete materials[k];}

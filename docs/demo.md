@@ -32,7 +32,7 @@ These systems redistribute existing credits; resource collection does not create
 
 ## Demonstrate portrait controls
 
-Use a phone or a narrow touch viewport. The left joystick moves and steers; drag the world to adjust the camera. The right controls handle interaction and entering/leaving the pickup. Open the depot panel, change the quantity and inspect the confirmation button without horizontal scrolling.
+Use a phone or a narrow touch viewport. The left joystick moves and steers; drag the world to adjust the camera. The right controls handle interaction and entering/leaving the pickup. While driving, hold the up-arrow accelerator and steer with the joystick; releasing the joystick keeps the held accelerator active. Open the depot panel, change the quantity and inspect the confirmation button without horizontal scrolling.
 
 A browser’s mobile viewport is useful for layout and input checks. Only a physical-device run supports claims about that phone’s frame rate, thermals or battery use.
 

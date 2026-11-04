@@ -1,6 +1,7 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {PLACES,RESOURCE_NAMES,START_POSITION,TRUCK_POSITION,emptyInventory,type GameState,type GameAction,type PlaceId,type Resource,type Vec2} from '../shared/types';
 import {BUILD_COST,RECIPES,SCANNER_COST,cargoUsed,capacity,quoteTrade,roundMoney} from '../shared/economy-rules';
+import {findVehicleExit} from '../shared/world-layout';
 
 export {quoteTrade} from '../shared/economy-rules';
 export interface OracleCommand {nonce:number;kind:'harvest'|'fuel';resource:'crude'|'ore'|'timber';amount:number;createdAt:number;attempts:number;lastAttemptAt:number;after:GameState;lastGatherAt:number;requestId:string;receipt?:{hash:string;explorerUrl:string};}
@@ -27,7 +28,7 @@ function prospectHint(from:Vec2,to:Vec2):string {
 }
 
 export function newGame(id:string=randomUUID(),now=Date.now()):SavedGame {
- const state:GameState={mode:'demo',day:1,revision:0,player:{id,name:'New arrival',position:{...START_POSITION},heading:0,driving:false,fuel:70,energy:100,scanner:false,balance:120,inventory:emptyInventory(),facility:false,discovered:false,xp:0},truckPosition:{...TRUCK_POSITION},deposits:{crude:80,ore:100,timber:100},production:{fuelConsumed:0,materialsUsed:0},merchants:[
+ const state:GameState={mode:'demo',day:1,revision:0,player:{id,name:'New arrival',position:{...START_POSITION},heading:0,driving:false,fuel:70,energy:100,scanner:false,balance:120,inventory:emptyInventory(),facility:false,discovered:false,xp:0},truckPosition:{...TRUCK_POSITION},truckHeading:0,deposits:{crude:80,ore:100,timber:100},production:{fuelConsumed:0,materialsUsed:0},merchants:[
  {id:'depot',name:'Supply depot',budget:300,stock:{...emptyInventory(),petrol:12,steel:10,planks:12}},
  {id:'refinery',name:'Lowland Refinery',budget:180,stock:{...emptyInventory(),crude:8,petrol:16}},
  {id:'sawmill',name:'Pine & Co. Sawmill',budget:160,stock:{...emptyInventory(),timber:10,planks:16}},
@@ -42,6 +43,7 @@ export function applyAction(saved:SavedGame,action:GameAction,now=Date.now()):Sa
  // on their next successful action, then retain the same deposit across restarts.
  if(!meta.oilDeposit)meta.oilDeposit=createOilDeposit(randomUUID());
  if(p.discovered&&!p.depositPosition)p.discovered=false;
+ if(!Number.isFinite(s.truckHeading))s.truckHeading=p.driving?p.heading:0;
  expect(s.mode==='demo','Live settlement is not enabled for this session.');
  switch(action.type){
  case 'move':{
@@ -55,14 +57,17 @@ export function applyAction(saved:SavedGame,action:GameAction,now=Date.now()):Sa
   expect(travel<=allowed+.1,'Movement was too fast. Your position has been restored.');
   // A received on-chain transfer may exceed the normal carry allowance. Limit
   // new gathering and purchases, but never trap someone away from a business.
-  if(p.driving&&travel>.02){expect(p.fuel>0,'The tank is empty. Exit the pickup to fetch fuel.');p.fuel=Math.max(0,p.fuel-travel*.075);s.truckPosition={x:action.x,z:action.z};}
+  if(p.driving&&travel>.02){expect(p.fuel>0,'The tank is empty. Exit the pickup to fetch fuel.');p.fuel=Math.max(0,p.fuel-travel*.075);}
+  if(p.driving){s.truckPosition={x:action.x,z:action.z};s.truckHeading=action.heading;}
   p.position={x:action.x,z:action.z};p.heading=action.heading;meta.moveCredit=Math.max(0,allowed-travel);meta.lastMoveAt=now;
   break;
  }
  case 'enterVehicle':
-  expect(!p.driving,'You are already driving.');expect(distance(p.position,s.truckPosition??TRUCK_POSITION)<=6,'Move closer to your pickup.');p.driving=true;p.position={...(s.truckPosition??TRUCK_POSITION)};meta.lastMoveAt=now;meta.moveCredit=2;break;
- case 'exitVehicle':
-  expect(p.driving,'You are already on foot.');p.driving=false;s.truckPosition={...p.position};p.position={x:Math.min(98,p.position.x+2),z:p.position.z};meta.lastMoveAt=now;meta.moveCredit=2;break;
+  expect(!p.driving,'You are already driving.');expect(distance(p.position,s.truckPosition??TRUCK_POSITION)<=6,'Move closer to your pickup.');p.driving=true;p.position={...(s.truckPosition??TRUCK_POSITION)};p.heading=s.truckHeading??0;meta.lastMoveAt=now;meta.moveCredit=2;log(s,'Got into your pickup.',now);break;
+ case 'exitVehicle':{
+  expect(p.driving,'You are already on foot.');const exit=findVehicleExit(p.position,p.heading);expect(exit,'There is no room to step out here. Move the pickup away from the building.');
+  p.driving=false;s.truckPosition={...p.position};s.truckHeading=p.heading;p.position=exit!;meta.lastMoveAt=now;meta.moveCredit=2;log(s,'Parked your pickup.',now);break;
+ }
  case 'scanner':
   requireNear(s,'depot');expect(!p.scanner,'You already own a scanner.');spend(s,SCANNER_COST);budget(s,'depot',SCANNER_COST);p.scanner=true;log(s,'Bought a survey scanner. Search North ridge for an oil deposit.',now);break;
  case 'survey':{
