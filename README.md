@@ -105,6 +105,22 @@ Each material shortcut shows its gathering site, recipe, use and route. The back
 
 NEAR AI Cloud generates responses from each character’s role, current player state, inventory, merchant budget and quotes. Conversation history is server-owned. Chat cannot grant items, alter prices or move money.
 
+Conversation context is kept in server memory only: the last six messages per
+browser session, signed-in account and NPC. This lets residents understand
+follow-up questions. Message text is not written to Neon, game-save files or the
+blockchain. Neon/file usage records contain daily provider request/character
+counts, not conversations. Context older than 30 minutes and speech replies older
+than 10 minutes are removed on later chat/speech requests; these are reuse limits,
+not a timed deletion guarantee. Server restart clears the caches; logout currently
+does not explicitly erase them. The browser keeps displayed messages in component
+memory and clears them when the dialogue closes or the page reloads.
+
+NEAR AI's private inference guarantees apply to its TEE-hosted models. Worldo's
+backend still receives the message and sends the relevant context over HTTPS; it
+does not independently verify inference attestations or hide text from the game
+server. Optional ElevenLabs speech sends the generated reply to that separate
+provider. Do not describe the complete game chat flow as end-to-end private.
+
 ElevenLabs voices the generated reply using a server-configured voice for each character, or the shared fallback voice ID. No microphone is used. Closing dialogue or starting another reply cancels previous audio; browsers that block autoplay show a Listen button. Device speech synthesis is not used.
 
 Without a configured provider, the UI labels conversation or voice unavailable. Shops remain usable. Initial greetings are authored introductions, not claimed AI output.
@@ -129,7 +145,7 @@ npm test runs application/API regressions; npm run build checks TypeScript and b
 
 For isolated internal browser checks, `node scripts/preview.mjs` serves a development fixture on localhost:3000. It explicitly uses `APP_MODE=development` and separate `.local/e2e` saves. This fixture is not the public account flow. `npm run test:e2e` uses desktop and portrait emulation; practice scenarios require that isolated fixture, not the public social-login release.
 
-The current application/API suite contains **199 tests**. The production TypeScript/client build passes. Network profile checks cover inherited credentials, mixed networks and deployment-scoped saves. Camera entry/turn/exit and UI checks cover desktop and portrait layouts. A deliberately throttled 112-frame rendering check reproduced three cleared frames before the resize fix and zero afterward. The local testnet social-login popup was opened and inspected (email, Google and passkey options); no credentials were entered and a completed social login/signature is still unverified.
+The current application/API suite contains **200 tests**. The production TypeScript/client build passes. Network profile checks cover inherited credentials, mixed networks and deployment-scoped saves, including live NPC chat and speech. Camera entry/turn/exit and UI checks cover desktop and portrait layouts. A deliberately throttled 112-frame rendering check reproduced three cleared frames before the resize fix and zero afterward. The local testnet social-login popup was opened and inspected (email, Google and passkey options); no credentials were entered and a completed social login/signature is still unverified.
 
 Earlier verification on 4 November 2026 covered six desktop/portrait practice scenarios and a real testnet sequence: registration, deposit, reload, quarry harvest, foundry processing and sale. It verified the 0.001 test NEAR fee, canonical inventory, conserved balances and sponsored signing. [Historical testnet receipts](docs/testnet-validation.json) preserve that evidence. That transaction test used a development browser wallet; it does not prove the current social-login flow or the latest camera behavior.
 

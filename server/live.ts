@@ -23,7 +23,7 @@ export interface LiveGateway {
 }
 const defaultGateway:LiveGateway={configured:chain.gameChainConfigured,read:chain.readLiveEconomy,quote:chain.liveTradeQuote,harvest:chain.submitHarvestGrant,fuel:chain.submitFuelConsumption,merchants:chain.merchantAccounts};
 const UNIT=10n**21n;
-const accountKey=(accountId:string)=>{
+export const liveAccountKey=(accountId:string)=>{
  const contractId=process.env.NEAR_CONTRACT_ID;if(!contractId)throw new Error('Game contract is not configured.');
  // Oracle nonces belong to one deployment. Legacy records cannot prove their
  // contract, so leave them untouched rather than carrying a pending grant across.
@@ -50,7 +50,7 @@ export function projectChainState(saved:SavedGame,accountId:string,economy:Econo
 /** Persistent account state never inherits a guest world's money, items or progress. */
 export class LiveGameService {
  constructor(private store:GameStore,private gateway:LiveGateway=defaultGateway){}
- private key(id:string){return accountKey(id);}
+ private key(id:string){return liveAccountKey(id);}
  async session(accountId:string){
   const key=this.key(accountId);await this.store.create(key);
   // A previously authorized oracle command may have completed while its HTTP response was lost.

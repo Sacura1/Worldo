@@ -1,6 +1,6 @@
 import {Router,type Request} from 'express';
 import {z} from 'zod';
-import {createHash,randomUUID} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import {SERVICE_NPCS,NPC_INTERACTION_RADIUS,getWorldColliders,type ServiceNpc} from '../shared/town';
 import {clearLineOfSight} from '../shared/world-physics';
 import {PLACES,type GameState,type Resource} from '../shared/types';
@@ -10,7 +10,7 @@ import {GameError} from './economy';
 import {getVerifiedIdentity,nearConfiguration} from './near';
 import {appMode,nearNetworkConfiguration} from './near-config';
 import {readLiveEconomy,liveTradeQuote} from './game-chain';
-import {projectChainState} from './live';
+import {projectChainState,liveAccountKey} from './live';
 import {NpcProviders,npcReadiness} from './npc-providers';
 import {assertMainnetReady} from './production-readiness';
 
@@ -62,7 +62,7 @@ export function createNpcRouter(store:GameStore,providers=new NpcProviders()){
    const identity=getVerifiedIdentity(req);if(!identity)throw new GameError('Sign in and open the configured chain world first.',403);
    await assertMainnetReady();
    if(!nearConfiguration().liveGameplayEnabled)throw new GameError('Sign in and open the configured chain world first.',403);
-   const accountId=identity.accountId,worldKey=createHash('sha256').update(`lowland-${nearNetworkConfiguration().network}-v1:${accountId}`).digest('hex');principal=accountId;
+   const accountId=identity.accountId,worldKey=liveAccountKey(accountId);principal=accountId;
    const saved=await store.get(worldKey);if(!saved||saved.state.mode!=='live')throw new GameError('Open your chain world first.',409);
    checkNpcProximity(saved.state,npcId);state=projectChainState(saved,accountId,await readLiveEconomy(accountId)).state;
   }else{const saved=await store.get(req.sessionId);if(!saved)throw new GameError('Open your practice world first.',409);state=saved.state;}

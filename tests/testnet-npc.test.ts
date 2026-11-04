@@ -9,6 +9,7 @@ import {GameStore} from '../server/store';
 import {nearNetworkConfiguration,nearAuthConfiguration,testnetWalletEnabled,assertNearRpcNetwork} from '../server/near-config';
 import {reserveTestnetBudget,claimTestnetWallet} from '../server/testnet-journal';
 import {checkNpcProximity} from '../server/npc';
+import {liveAccountKey} from '../server/live';
 import {SERVICE_NPCS} from '../shared/town';
 
 afterEach(()=>{vi.unstubAllEnvs();vi.restoreAllMocks();});
@@ -18,7 +19,8 @@ async function fixture(network='testnet'){
  const address=server.address();if(!address||typeof address==='string')throw Error('No listener');const base=`http://127.0.0.1:${address.port}`;
  const session=await fetch(base+'/api/session'),cookie=session.headers.get('set-cookie')!.split(';')[0],sessionId=createHash('sha256').update(cookie.split('=')[1]).digest('hex');await session.json();
  const post=async(endpoint:string,body:unknown)=>fetch(base+endpoint,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:JSON.stringify(body)});
- return{base,store,directory,post,sessionId,close:async()=>{await new Promise<void>((resolve,reject)=>{server.close(e=>e?reject(e):resolve());server.closeAllConnections();});if(!path.resolve(directory).startsWith(path.resolve(os.tmpdir())+path.sep))throw Error('Unexpected temporary path');await rm(directory,{recursive:true,force:true});}};
+ const get=async(endpoint:string)=>fetch(base+endpoint,{headers:{Cookie:cookie}});
+ return{base,store,directory,post,get,sessionId,close:async()=>{await new Promise<void>((resolve,reject)=>{server.close(e=>e?reject(e):resolve());server.closeAllConnections();});if(!path.resolve(directory).startsWith(path.resolve(os.tmpdir())+path.sep))throw Error('Unexpected temporary path');await rm(directory,{recursive:true,force:true});}};
 }
 async function login(f:Awaited<ReturnType<typeof fixture>>,pair=KeyPair.fromRandom('ed25519')){
  const challenge=await(await f.post('/api/near/testnet-challenge',{})).json();const signature=[...pair.sign(createHash('sha256').update(Buffer.from(challenge.payload)).digest()).signature];
@@ -64,6 +66,37 @@ describe('network isolation and local testnet wallet',()=>{
  });
 });
 describe('NPC conversations use server state without economic actions',()=>{
+ it('uses the live session deployment save for nearby chat and speech, ignoring a legacy save',async()=>{
+  const f=await fixture();try{
+   const operatorKey=KeyPair.fromRandom('ed25519').toString();
+   for(const [name,value]of Object.entries({ENABLE_TESTNET:'true',NEAR_CONTRACT_ID:'worldo.testnet',NEAR_ORACLE_ACCOUNT_ID:'oracle.testnet',NEAR_ORACLE_PRIVATE_KEY:operatorKey,NEAR_RELAYER_ACCOUNT_ID:'relay.testnet',NEAR_RELAYER_PRIVATE_KEY:operatorKey,NEAR_RELAYER_DAILY_BUDGET_YOCTO:'10000000000000000000000000',NEAR_REFINERY_ACCOUNT:'refinery.testnet',NEAR_FOUNDRY_ACCOUNT:'foundry.testnet',NEAR_SAWMILL_ACCOUNT:'sawmill.testnet',NEAR_DEPOT_ACCOUNT:'depot.testnet',NEAR_AI_API_KEY:'mock-only-ai',ELEVENLABS_API_KEY:'mock-only-voice',ELEVENLABS_VOICE_MORGAN:'accountVoice123'}))vi.stubEnv(name,value);
+   const signedIn=await login(f);expect(signedIn.response.status).toBe(200);const {identity}=await signedIn.response.json();
+   const realFetch=globalThis.fetch,prompts:string[]=[],spoken:string[]=[];
+   vi.spyOn(globalThis,'fetch').mockImplementation(async(input,init)=>{
+    const url=String(input);if(url.startsWith(f.base))return realFetch(input,init);
+    if(url==='https://test.rpc.fastnear.com'){
+     const body=JSON.parse(String(init?.body));expect(body.method).toBe('query');expect(body.params.request_type).toBe('call_function');expect(body.params.account_id).toBe('worldo.testnet');
+     const args=JSON.parse(Buffer.from(body.params.args_base64,'base64').toString());
+     expect(['account','is_paused','quote']).toContain(body.params.method_name);
+     const result=body.params.method_name==='is_paused'?false:body.params.method_name==='quote'?'1000000000000000000000':{inventory:['0','0','2','1','0','0'],balance:args.account_id===identity.accountId?'250000000000000000000000':'5000000000000000000000000',harvest_nonce:0,refinery:false};
+     return new Response(JSON.stringify({result:{result:[...Buffer.from(JSON.stringify(result))]}}));
+    }
+    if(url==='https://cloud-api.near.ai/v1/chat/completions'){prompts.push(String(init?.body));return new Response(JSON.stringify({choices:[{message:{content:'Bring your timber to the sawmill, then check its current offer.'}}]}));}
+    if(url==='https://api.elevenlabs.io/v1/voices/accountVoice123')return new Response(JSON.stringify({voice_id:'accountVoice123'}));
+    if(url.includes('/text-to-speech/accountVoice123/stream')){spoken.push(JSON.parse(String(init?.body)).text);return new Response(new Uint8Array(64),{headers:{'Content-Type':'audio/mpeg'}});}
+    throw new Error('Unexpected external request');
+   });
+   const session=await f.get('/api/live/session');expect(session.status).toBe(200);expect(await session.json()).toMatchObject({mode:'live',player:{id:identity.accountId,balance:.25}});
+   const deploymentKey=liveAccountKey(identity.accountId),legacyKey=createHash('sha256').update(`lowland-testnet-v1:${identity.accountId}`).digest('hex');
+   expect(await f.store.get(legacyKey)).toBeNull();
+   const saved=await f.store.mutate(deploymentKey,old=>{const next=structuredClone(old);next.state.player.position={x:0,z:5.4};next.state.revision++;return next;});
+   await f.store.create(legacyKey);const legacy=await f.store.mutate(legacyKey,old=>{const next=structuredClone(old);next.state.mode='live';next.state.player.position={x:100,z:100};next.state.player.balance=777;next.state.revision++;return next;});
+   const chat=await f.post('/api/npc/chat',{npcId:'morgan',message:'What should I do with my timber?',mode:'live'});expect(chat.status).toBe(200);const reply=await chat.json();
+   const facts=JSON.parse(prompts[0]).messages[0].content;expect(facts).toContain('"currency":"test NEAR"');expect(facts).toContain('"balance":0.25');
+   const speech=await f.post('/api/npc/speech',{npcId:'morgan',replyId:reply.replyId,mode:'live'});expect(speech.status).toBe(200);expect((await speech.arrayBuffer()).byteLength).toBe(64);expect(spoken).toEqual([reply.text]);
+   expect(await f.store.get(deploymentKey)).toEqual(saved);expect(await f.store.get(legacyKey)).toEqual(legacy);
+  }finally{await f.close();}
+ });
  it('blocks a nearby conversation through a wall and permits it across the counter',async()=>{
   const f=await fixture('mainnet');try{const saved=(await f.store.get(f.sessionId))!;const state=structuredClone(saved.state);state.player.driving=false;state.player.position={x:-2,z:.1};expect(()=>checkNpcProximity(state,'morgan')).toThrow('see you');state.player.position={x:-2,z:5.2};expect(checkNpcProximity(state,'morgan').id).toBe('morgan');state.player.position={x:-2,z:6.5};expect(()=>checkNpcProximity(state,'morgan')).toThrow('closer');}finally{await f.close();}
  });
