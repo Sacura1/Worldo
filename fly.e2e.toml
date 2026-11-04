@@ -1,0 +1,5 @@
+# Build-only browser verification. Never deploy this image as the game service.
+app = "lowland-near"
+
+[build]
+  dockerfile = "Dockerfile.e2e"
