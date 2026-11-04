@@ -10,7 +10,7 @@ export function exactNear(yocto:string):string{
 }
 export interface ChainReceipt {hash:string;explorerUrl:string;}
 export interface ActionCost {
- accountId:string;
+ accountId:string;network?:'mainnet'|'testnet';signingMode?:'near-auth'|'testnet-wallet';
  kind:'transaction'|'delegateAction';gasSponsored:boolean;attachedDepositPayer:'player'|'sponsor';
  attachedDepositYocto:string;gas:string;feeEstimateYocto:string;gasPriceYocto:string;estimatedAt:number;
 }
@@ -45,7 +45,7 @@ export function MainnetAction({action,accountId,busy,error,onConfirm,onCancel}:{
  const canConfirm=!!cost&&!loading&&!costError&&!expired&&!busy&&!error;
  const walletEstimate=cost?BigInt(cost.attachedDepositPayer==='player'?cost.attachedDepositYocto:'0')+BigInt(cost.gasSponsored?'0':cost.feeEstimateYocto):null;
  return <div className="panel-body live-review">
-  <div className="live-review-heading"><NearIcon/><div><h3>{action.label}</h3><small>NEAR mainnet transaction</small></div></div>
+  <div className="live-review-heading"><NearIcon/><div><h3>{action.label}</h3><small>NEAR {cost?.network||'chain'} transaction{cost?.network==='testnet'?' · test tokens':''}</small></div></div>
   <dl className="live-transaction">
    <div><dt>From</dt><dd>{accountId}</dd></div><div><dt>Contract</dt><dd>{current?.receiver||action.receiverId||'Checking contract…'}</dd></div>
    {action.costYocto&&<div><dt>Game balance cost</dt><dd>{exactNear(action.costYocto)} NEAR</dd></div>}
@@ -54,7 +54,7 @@ export function MainnetAction({action,accountId,busy,error,onConfirm,onCancel}:{
    <div><dt>Estimated network allowance</dt><dd>{cost?exactNear(cost.feeEstimateYocto)+' NEAR':'Loading…'}{cost&&<small><br/>{cost.gasSponsored?'Sponsored by Worldo':'Paid by your wallet'}</small>}</dd></div>
    {walletEstimate!==null&&<div><dt>Estimated wallet debit</dt><dd>{exactNear(walletEstimate.toString())} NEAR</dd></div>}
   </dl>
-  {cost&&!cost.gasSponsored&&<p className="fine-print">The network fee depends on gas used; unused gas is refunded. This is an estimate, not a guaranteed maximum. If the estimate increases before submission, reopen the action to review it again. The signing service is sponsored.</p>}
+  {cost&&!cost.gasSponsored&&<p className="fine-print">The network fee depends on gas used; unused gas is refunded. This is an estimate, not a guaranteed maximum. If the estimate increases before submission, reopen the action to review it again. {cost.signingMode==='testnet-wallet'?'Your test wallet signs in this browser.':'The signing service is sponsored.'}</p>}
   {cost?.gasSponsored&&<p className="fine-print">Worldo sponsors the attached one yoctoNEAR and network fee. Any game-balance cost shown above still comes from your game account.</p>}
   <details className="live-transaction-details"><summary>Transaction details</summary><code>{action.method}</code><pre>{JSON.stringify(action.args,null,2)}</pre>{cost&&<small>{cost.kind==='transaction'?'Player-signed transaction':'Sponsored delegated transaction'} · {cost.gas} gas attached</small>}</details>
   <div className="note"><ShieldCheck size={18}/><p>Review the recipient, amount and who pays before signing. Balances and inventory update after confirmation.</p></div>

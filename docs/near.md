@@ -1,8 +1,120 @@
-# NEAR implementation and production setup
+# NEAR implementation and network setup
 
 The default playable world is a practice economy. Its credits are not NEAR and its
 inventory is not an on-chain balance. Enabling the live funding flow does not
 convert practice progress into withdrawable money.
+
+## Playable testnet deployment
+
+Testnet uses free test tokens with no monetary value. Set `NEAR_NETWORK=testnet`,
+`ENABLE_TESTNET=true`, `ENABLE_MAINNET=false` and `NEAR_AUTH_MODE=testnet-wallet`.
+Leave `NEAR_RPC_URL` and explicit Auth values blank to use network-derived defaults.
+The server selects the official listed testnet RPC (https://test.rpc.fastnear.com), `wrap.testnet` and testnet explorer; live-world
+records are isolated by network. The mainnet default is https://free.rpc.fastnear.com. These endpoints follow the
+[current official provider list](https://docs.near.org/api/rpc/providers). Before
+signing, broadcasting, activation or oracle writes, the server verifies the node’s
+actual `status.chain_id` against the selected network, cached for 30 seconds.
+`GET /api/near/network-status` exposes that check. Known opposite-network hosts
+are rejected at configuration time; other providers must still pass the chain-ID
+check. Never point a testnet deployment at a mainnet RPC.
+
+1. Create and fund a **testnet-only** operator account through the
+   [NEAR faucet](https://near-faucet.io/). Deploy the compiled contract to a testnet
+   account; initialize its owner and oracle. Follow the contract initialization
+   sequence below, registering and funding the four testnet merchant accounts.
+2. Configure `NEAR_CONTRACT_ID`, `NEAR_ORACLE_ACCOUNT_ID`/`NEAR_ORACLE_PRIVATE_KEY`,
+   the four `NEAR_*_ACCOUNT` merchant settings, and
+   `NEAR_RELAYER_ACCOUNT_ID`/`NEAR_RELAYER_PRIVATE_KEY` with a funded testnet operator.
+   Set an explicit `NEAR_RELAYER_DAILY_BUDGET_YOCTO`. Browser test wallets do not
+   use MPC, so `NEAR_RELAYER_SIGN_DEPOSIT_YOCTO` is not required in this mode.
+3. Keep `LOCAL_DATA_DIR` on the Fly volume. Without Neon, testnet uses a durable
+   single-process operator journal for daily reservations and one-time activation.
+   This deployment must stay on one app machine. Mainnet continues to require
+   Neon for budget and executable-quote records. Testnet games also support Neon.
+4. In the wallet panel, choose **Create test wallet**, then **Activate wallet**.
+   The browser generates its own Ed25519 key and proves possession with a one-use,
+   session-bound challenge. The server derives the implicit account from the key;
+   it never accepts a claimed account as proof. The private key stays in this
+   origin’s testnet-specific browser storage. Clearing browser data loses access;
+   this is a disposable development wallet, not social login or a production wallet.
+5. Activation supplies **1 test NEAR once**, plus wrapped-token storage, within
+   the operator’s budget. Review registration (0.01 NEAR storage; the remainder
+   becomes game balance), sign it in the browser, then enter the testnet world.
+   Registration/deposits debit the player’s wallet and gas; one-yocto game calls
+   are sponsored. The same receipt and finalized-inventory reconciliation apply.
+
+The browser wallet is rejected outside testnet at login, preparation and relay.
+The key is never sent to the game server. These accounts must never hold real funds.
+**NEAR Intents has no testnet deployment**, according to its
+[official FAQ](https://docs.near-intents.org/resources/faqs). Every Intents endpoint
+returns unavailable on testnet, including dry quotes. Mainnet swaps cannot fund
+testnet balances, and the testnet UI does not display real deposit instructions.
+
+### Verified testnet browser flow
+
+On 2026-11-04, desktop run `20261104-testnet-05` passed against the deployed
+app and real NEAR testnet in 151.7 seconds. The browser created its own wallet,
+activated it, signed a 0.05 test NEAR registration (0.01 storage + 0.04 game
+balance), deposited another 0.01, and reloaded the same account. The resulting
+game balance before resource work was exactly 0.05 test NEAR.
+
+Using game controls, the player walked to Stonecut Quarry and harvested two ore
+with a finalized oracle receipt and one nonce increment. The player opened the
+foundry door from beside its swing, spoke to Rosa, and signed production of one
+steel from two ore. The contract charged exactly `1000000000000000000000`
+yoctoNEAR (0.001 NEAR), crediting the same amount to the merchant. The player then
+sold that steel through a reviewed, browser-signed transaction. Finalized chain
+and server inventories agreed at each step; the merchant received one steel,
+and combined player/merchant balances were conserved. The player's native wallet
+balance stayed unchanged during the two sponsored gameplay calls.
+
+The same run held actual backend quote responses during the switch from practice
+to testnet: the NEAR price panel showed dashes while responses were pending, then
+displayed the prices from those unmodified responses. It checked the RPC’s actual
+chain ID before transactions and used no Auth0 popup, fabricated balances,
+API action shortcuts or server-held player key.
+
+Public receipts: [harvest](https://testnet.nearblocks.io/txns/C777WkjGP7w4HD576q8Pm1svMUntfTqpjkB3QpA93SoK),
+[processing](https://testnet.nearblocks.io/txns/73EE58YXfQ755FhEDajJtfDCoB8jRQMP6k5hNcAxR3mJ),
+[steel sale](https://testnet.nearblocks.io/txns/9VfuHxesKa9Wpp5z1jHKWB9462asdxyRmQz2Fm9wSCei).
+Registration, deposit and exact checks are recorded in
+[testnet-validation.json](testnet-validation.json).
+
+The remote run exited 0: one desktop scenario passed, portrait transaction
+execution was intentionally skipped, and no errors or flakes were reported.
+This does not validate mainnet Auth approval, an Intents settlement or a live
+Neon deployment; those remain separate integrations.
+
+### Optional official testnet social login
+
+The [official testnet guide](https://docs.auth.near.org/resources/testnet) publishes
+client `np8paqIpMWmNbzT4xAvOOapZBjsOpptl`, domain `login.testnet.fast-auth.com`,
+signing audience `auth0.jwt.fast-auth.testnet`, Auth contract `fast-auth.testnet`
+and MPC contract `v1.signer-prod.testnet`. Set `NEAR_AUTH_MODE=social` to use it.
+A read-only authorization probe accepted the callback `http://localhost:3000`
+but rejected `https://lowland-near.fly.dev` and `http://localhost:5173` with a
+callback mismatch. That probe does not establish a completed login. A deployed
+social-login app needs its own approved callback configuration; the public client
+is not a bypass for arbitrary origins. This is why the deployed testnet preview
+uses browser-owned test wallets.
+
+## Residents and optional NEAR AI
+
+`POST /api/npc/chat` accepts `{npcId,message,mode,history?}` and returns
+`{text,suggestions,source:'local'|'near-ai'}`. Morgan runs the supply shop, Hale
+the refinery, Imani the sawmill, Rosa the foundry, and Theo the filling station.
+Players must be on foot, within 3.2 metres and visible across the shared town
+geometry. Authored replies use server inventory, current stock, finite merchant
+budgets and exact game quotes; conversation cannot execute economic actions.
+
+To enable optional model dialogue, create a server API key at
+[NEAR AI Cloud](https://cloud.near.ai/) and set `NEAR_AI_API_KEY`. The adapter uses
+the official `https://cloud-api.near.ai/v1/chat/completions` endpoint and
+`NEAR_AI_MODEL` (default `zai-org/GLM-5.1-FP8` from its
+[quickstart](https://docs.near.ai/cloud/quickstart)). No key or failed provider
+request falls back to authored replies, labelled `local`. Browser speech is
+text-to-speech, not a claim that the local fallback runs an AI model. No model
+receives a transaction tool, private key or authority to set prices.
 
 ## Included integrations
 
@@ -10,7 +122,7 @@ convert practice progress into withdrawable money.
   quotes, decimal-safe amounts, origin-chain refunds, official SDK quote-signature
   verification, immutable recipient routing, durable quote records, session-scoped
   execution status. Dry quotes never return executable instructions from this app.
-- `server/near.ts`: NEAR Auth mainnet sign-in, single-use NEP-413 login challenges,
+- `server/near.ts`: network-configured NEAR Auth sign-in and testnet-only browser wallets, single-use NEP-413 login challenges,
   JWT issuer/audience/application verification, MPC-derived implicit accounts,
   contract/account reads and allowlisted user-approved contract calls.
 - `server/relayer.ts`: optional local signing relayer. Keys stay server-side. It
@@ -155,7 +267,8 @@ determines the actual charged gas when executing the transaction.
 
 The external reference relayer's `/sign-tx` endpoint obtains ordinary transaction
 signatures; `/sign-delegate-tx` handles sponsored calls. All operations require
-an explicit app review and Auth0 authorization. Fully silent routine gameplay
+an explicit app review and a player signature. Social mode uses Auth0 authorization;
+testnet-wallet mode signs locally with its test-only browser key. Fully silent routine gameplay
 requires an additional bounded session design and is not claimed by this adapter.
 
 The gameplay oracle uses `NEAR_ORACLE_ACCOUNT_ID` and
@@ -181,7 +294,7 @@ real owner, contract and oracle accounts; no example account is a deployment tar
 
 Initialize `new({owner, oracle})` from the chosen owner account. The economy starts
 paused. Register player/NPC accounts with their storage reserve, fund merchant
-balances with real NEAR, register each merchant's business kind, verify balance
+balances with native NEAR on the selected network, register each merchant's business kind, verify balance
 conservation and transaction receipts, then call `set_paused({paused:false})` from
 the owner. In live mode, the operator must call `produce_stock` using each
 merchant's own account to turn purchased raw stock into goods. No autonomous

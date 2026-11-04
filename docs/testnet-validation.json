@@ -1,0 +1,98 @@
+{
+  "network": "testnet",
+  "contractId": "economy.worldo-lab-aecd50.testnet",
+  "receipts": [
+    {
+      "label": "upgrade-price-unit",
+      "hash": "2zcAV2Uib11swj3beRph6HakKBGa12xALWcv5K7evAVR",
+      "explorerUrl": "https://testnet.nearblocks.io/txns/2zcAV2Uib11swj3beRph6HakKBGa12xALWcv5K7evAVR"
+    },
+    {
+      "label": "unpause",
+      "hash": "Kr7m1JR9wiwGAfe6UHYpCLuMAXkC1Pn2tyvEZjsRkvQ",
+      "explorerUrl": "https://testnet.nearblocks.io/txns/Kr7m1JR9wiwGAfe6UHYpCLuMAXkC1Pn2tyvEZjsRkvQ"
+    },
+    {
+      "label": "validation-deposit",
+      "hash": "4rcwJ7X68LwBoZ5VHaUzAPnXqjp2wKKL7oZvECniCpdd",
+      "explorerUrl": "https://testnet.nearblocks.io/txns/4rcwJ7X68LwBoZ5VHaUzAPnXqjp2wKKL7oZvECniCpdd"
+    },
+    {
+      "label": "validation-harvest",
+      "hash": "GG1sVMPYoh8P8o2EiC9aFUNx6a1KnAzQ3iWuGQAq8BFH",
+      "explorerUrl": "https://testnet.nearblocks.io/txns/GG1sVMPYoh8P8o2EiC9aFUNx6a1KnAzQ3iWuGQAq8BFH"
+    },
+    {
+      "label": "validation-processing",
+      "hash": "BkEEWTH5budVZ2CUcCCwKoFraXVFtKoHmpXJYzPKikmf",
+      "explorerUrl": "https://testnet.nearblocks.io/txns/BkEEWTH5budVZ2CUcCCwKoFraXVFtKoHmpXJYzPKikmf"
+    },
+    {
+      "label": "browser-qa05-register",
+      "hash": "HUChi9yi9YfQt91zTTn6MwPffvVY784wn8JrLf78hZut",
+      "explorerUrl": "https://testnet.nearblocks.io/txns/HUChi9yi9YfQt91zTTn6MwPffvVY784wn8JrLf78hZut"
+    },
+    {
+      "label": "browser-qa05-deposit",
+      "hash": "2jzb6fWNQDbSX88yRMgbSfST9YJiehuSKCSyTq2b62va",
+      "explorerUrl": "https://testnet.nearblocks.io/txns/2jzb6fWNQDbSX88yRMgbSfST9YJiehuSKCSyTq2b62va"
+    },
+    {
+      "label": "browser-qa05-grant_harvest",
+      "hash": "C777WkjGP7w4HD576q8Pm1svMUntfTqpjkB3QpA93SoK",
+      "explorerUrl": "https://testnet.nearblocks.io/txns/C777WkjGP7w4HD576q8Pm1svMUntfTqpjkB3QpA93SoK"
+    },
+    {
+      "label": "browser-qa05-process",
+      "hash": "73EE58YXfQ755FhEDajJtfDCoB8jRQMP6k5hNcAxR3mJ",
+      "explorerUrl": "https://testnet.nearblocks.io/txns/73EE58YXfQ755FhEDajJtfDCoB8jRQMP6k5hNcAxR3mJ"
+    },
+    {
+      "label": "browser-qa05-trade",
+      "hash": "9VfuHxesKa9Wpp5z1jHKWB9462asdxyRmQz2Fm9wSCei",
+      "explorerUrl": "https://testnet.nearblocks.io/txns/9VfuHxesKa9Wpp5z1jHKWB9462asdxyRmQz2Fm9wSCei"
+    }
+  ],
+  "checks": {
+    "petrolBuyQuoteYocto": "15312500000000000000000",
+    "processingFeeYocto": "1000000000000000000000",
+    "rawConsumed": "2",
+    "petrolProduced": "1"
+  },
+  "browserValidation": {
+    "runId": "20261104-testnet-05",
+    "date": "2026-11-04",
+    "appUrl": "https://lowland-near.fly.dev",
+    "status": "passed",
+    "project": "desktop",
+    "durationMs": 151742,
+    "portraitTransactions": "intentionally skipped",
+    "checks": {
+      "actualRpcChainId": "testnet",
+      "walletPrivateKey": "browser only; not exported",
+      "registrationYocto": "50000000000000000000000",
+      "storageReserveYocto": "10000000000000000000000",
+      "additionalDepositYocto": "10000000000000000000000",
+      "balanceBeforeGameplayYocto": "50000000000000000000000",
+      "pendingQuotesShowDashes": true,
+      "quotesAfterRelease": "unmodified real backend responses",
+      "walletReloadPersisted": true,
+      "oreHarvested": 2,
+      "oracleNonceIncrement": 1,
+      "oreProcessed": 2,
+      "steelProduced": 1,
+      "processingFeeYocto": "1000000000000000000000",
+      "steelSold": 1,
+      "finalOre": 0,
+      "finalSteel": 0,
+      "playerMerchantBalancesConserved": true,
+      "nativePlayerWalletUnchangedDuringSponsoredCalls": true,
+      "allMutations": "game UI and browser-owned signatures"
+    },
+    "notVerified": [
+      "mainnet NEAR Auth approval/sign-in",
+      "mainnet Intents settlement",
+      "portrait transaction execution in this scenario"
+    ]
+  }
+}

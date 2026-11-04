@@ -8,7 +8,7 @@ use near_sdk::PromiseResult;
 use near_sdk::store::LookupMap;
 
 const STORAGE: u128 = 10_000_000_000_000_000_000_000; // 0.01 NEAR reserved per fixed-size account.
-const UNIT: u128 = 1_000_000_000_000_000_000; // 0.001 NEAR
+const UNIT: u128 = 1_000_000_000_000_000_000_000; // 0.001 NEAR (1 NEAR = 10^24 yoctoNEAR)
 const DAY_NS: u64 = 86_400_000_000_000;
 const BASE: [u128; 6] = [2, 3, 2, 7, 10, 7];
 
@@ -257,6 +257,30 @@ mod tests{
  #[test]#[should_panic(expected="Harvest replay")]fn harvest_cannot_replay(){let mut c=setup();context("oracle.near",0);c.grant_harvest(id("alice.near"),"crude".into(),U128(1),1);c.grant_harvest(id("alice.near"),"crude".into(),U128(1),1);}
  #[test]fn buy_sell_spread_prevents_free_money(){for stock in 1..150{let cost=Lowland::total(stock,0,1,true);let returned=Lowland::total(stock-1,0,1,false);assert!(returned<cost);}}
  #[test]fn production_consumes_inputs(){let mut c=setup();context("oracle.near",0);c.grant_harvest(id("alice.near"),"crude".into(),U128(4),1);context("alice.near",1);c.process(id("refinery.near"),"crude".into(),2);assert_eq!(c.mt_supply("crude".into()).unwrap().0,0);assert_eq!(c.mt_supply("petrol".into()).unwrap().0,2);}
+ #[test]
+ fn processing_charges_exactly_one_millinear_in_yocto(){
+  let mut c=setup();harvest_raw(&mut c,"alice.near","crude",2);
+  let player_before=c.account(id("alice.near")).unwrap().balance.0;
+  let merchant_before=c.account(id("refinery.near")).unwrap().balance.0;
+  let total_before=ledger_total(&c);
+  context("alice.near",1);c.process(id("refinery.near"),"crude".into(),1);
+  // Literal external denomination: this must fail if UNIT is accidentally 10^18.
+  let expected_fee:u128=1_000_000_000_000_000_000_000;
+  assert_eq!(player_before-c.account(id("alice.near")).unwrap().balance.0,expected_fee);
+  assert_eq!(c.account(id("refinery.near")).unwrap().balance.0-merchant_before,expected_fee);
+  assert_eq!(ledger_total(&c),total_before);
+  assert_eq!(c.mt_balance_of(id("alice.near"),"crude".into()).0,0);
+  assert_eq!(c.mt_balance_of(id("alice.near"),"petrol".into()).0,1);
+ }
+ #[test]
+ fn trade_quotes_use_near_yocto_denomination(){
+  let mut c=setup();
+  // Empty-stock crude bid: 2 * 0.001 NEAR * 180% scarcity * 80% bid.
+  assert_eq!(c.quote(id("refinery.near"),"crude".into(),U128(1),false).0,2_880_000_000_000_000_000_000);
+  harvest_raw(&mut c,"refinery.near","crude",2);context("refinery.near",0);c.produce_stock(1);
+  // One-can petrol ask: 7 * 0.001 NEAR * 179% scarcity * 125% ask.
+  assert_eq!(c.quote(id("refinery.near"),"petrol".into(),U128(1),true).0,15_662_500_000_000_000_000_000);
+ }
  #[test]fn unknown_tokens_have_no_supply(){let c=setup();assert!(c.mt_supply("missing".into()).is_none());assert!(c.mt_token(vec!["missing".into()])[0].is_none());}
  #[test]
  fn building_consumes_exact_materials_and_grants_only_builder_ownership(){

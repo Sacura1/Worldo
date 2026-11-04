@@ -1,24 +1,8 @@
-import {test,expect,type Page,type CDPSession} from '@playwright/test';
-import type {GameState} from '../shared/types';
+import {test,expect,type Page} from '@playwright/test';
+import {goTo,readState as state,startWorld} from './navigation';
 
 const separation=(a:{x:number;z:number},b:{x:number;z:number})=>Math.hypot(a.x-b.x,a.z-b.z);
 const angleDifference=(a:number,b:number)=>Math.abs(Math.atan2(Math.sin(a-b),Math.cos(a-b)));
-async function state(page:Page):Promise<GameState>{
- // Use the application's browser connection and cookies. A separate Node-side
- // request context can stall on local DNS even while the public game works.
- const response=await page.evaluate(async()=>{
-  const result=await fetch('/api/session',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(10000)});
-  return{ok:result.ok,status:result.status,body:await result.json()};
- });
- expect(response.ok,`Read-only session request returned HTTP ${response.status}`).toBeTruthy();return response.body;
-}
-async function joystickPulse(page:Page,session:CDPSession,dx:number,dy:number,duration:number){
- const box=await page.getByRole('slider',{name:/Move character|Steer and drive/}).boundingBox();expect(box).not.toBeNull();
- const x=box!.x+box!.width/2,y=box!.y+box!.height/2;
- await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
- try{await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+dx,y:y+dy}]});await page.waitForTimeout(duration);}
- finally{await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
-}
 async function waitForStop(page:Page){
  let previous=(await state(page)).player.position,stable=0;
  await expect.poll(async()=>{await page.waitForTimeout(400);const current=(await state(page)).player.position;stable=separation(current,previous)<.12?stable+1:0;previous=current;return stable;},{timeout:15000,intervals:[250]}).toBeGreaterThanOrEqual(3);
@@ -28,30 +12,13 @@ async function waitForStop(page:Page){
 test('pickup transport uses real controls and retains parking and fuel after reload',async({page},testInfo)=>{
  test.setTimeout(120000);
  const portrait=testInfo.project.name==='portrait',errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
- await page.goto('/');await page.getByRole('button',{name:'Enter Worldo',exact:true}).click();
- await page.getByRole('button',{name:'Open settings'}).click();await page.getByRole('combobox').selectOption('low');await page.getByRole('button',{name:'Close panel'}).click();
+ await startWorld(page);
  const touch=portrait?await page.context().newCDPSession(page):null;
  const start=await state(page),originalTruck=start.truckPosition!;
  expect(start.player.driving).toBe(false);expect(separation(start.player.position,originalTruck)).toBeGreaterThan(6);
- // Face and approach the visible pickup. Feedback makes the input sequence
- // independent of the software renderer's exact frame rate.
- const approachHistory:{heading:number;distance:number}[]=[];
- if(!touch){
-  const desired=Math.atan2(start.player.position.x-originalTruck.x,start.player.position.z-originalTruck.z),error=Math.atan2(Math.sin(desired-start.player.heading),Math.cos(desired-start.player.heading));
-  const turnKey=error<0?'d':'a';await page.keyboard.down(turnKey);
-  try{await expect.poll(async()=>angleDifference((await state(page)).player.heading,desired),{timeout:30000,intervals:[200]}).toBeLessThan(.3);}
-  finally{await page.keyboard.up(turnKey);}
-  await page.waitForTimeout(300);await page.keyboard.down('w');
-  try{await expect.poll(async()=>separation((await state(page)).player.position,originalTruck),{timeout:30000,intervals:[200]}).toBeLessThan(5.4);}
-  finally{await page.keyboard.up('w');}
-  await page.waitForTimeout(300);
- }else for(let step=0;step<20;step++){
-  const player=(await state(page)).player;approachHistory.push({heading:player.heading,distance:separation(player.position,originalTruck)});if(separation(player.position,originalTruck)<5.4)break;
-  const desired=Math.atan2(player.position.x-originalTruck.x,player.position.z-originalTruck.z),error=Math.atan2(Math.sin(desired-player.heading),Math.cos(desired-player.heading));
-  if(Math.abs(error)>.2){const duration=Math.min(450,Math.max(70,Math.abs(error)/2.3*1000));await joystickPulse(page,touch,error<0?30:-30,0,duration);}
-  else await joystickPulse(page,touch,0,-30,600);
- }
- if(approachHistory.length&&approachHistory.at(-1)!.distance>=5.4)console.log(`Transport ${testInfo.project.name} approach: ${JSON.stringify(approachHistory)}`);
+ // Approach through the ordinary camera-relative walking controls. The public
+ // scene planner keeps the avatar outside scenery and the parked truck body.
+ await goTo(page,originalTruck.x,originalTruck.z,5.2,touch);
  await expect.poll(async()=>separation((await state(page)).player.position,originalTruck),{timeout:15000}).toBeLessThan(6);
  if(portrait)await page.getByRole('button',{name:'Enter pickup',exact:true}).tap();else await page.keyboard.press('f');
  await expect.poll(async()=>(await state(page)).player.driving).toBe(true);

@@ -1,3 +1,4 @@
+import {nearNetworkConfiguration,transactionExplorerUrl,assertNearRpcNetwork} from './near-config';
 import {connect,keyStores,KeyPair} from 'near-api-js';
 import {nearRpc,viewContract,nearConfiguration,executionSucceeded} from './near';
 import type {Resource,PlaceId} from '../shared/types';
@@ -30,23 +31,24 @@ export function inventoryFromChain(account:LiveAccount):Record<Resource,number>{
  * On timeout, inspect harvest_nonce and the journal; never mint a new retry nonce.
  */
 export async function submitHarvestGrant(accountId:string,resource:'crude'|'ore'|'timber',amount:number,nonce:number):Promise<ChainReceipt>{
- if(!gameChainConfigured())throw new Error('Mainnet gameplay is not configured.');
+ if(!gameChainConfigured())throw new Error('Chain gameplay is not configured.');
  if(!['crude','ore','timber'].includes(resource)||!Number.isInteger(amount)||amount<1||amount>10||!Number.isSafeInteger(nonce)||nonce<1)throw new Error('Invalid harvest grant.');
  return submitOracleCommand('grant_harvest',{account_id:accountId,token_id:resource,amount:String(amount),nonce});
 }
 export async function submitFuelConsumption(accountId:string,amount:number,nonce:number):Promise<ChainReceipt>{
- if(!gameChainConfigured())throw new Error('Mainnet gameplay is not configured.');
+ if(!gameChainConfigured())throw new Error('Chain gameplay is not configured.');
  if(!Number.isInteger(amount)||amount<1||amount>10||!Number.isSafeInteger(nonce)||nonce<1)throw new Error('Invalid fuel consumption.');
  return submitOracleCommand('consume_fuel',{account_id:accountId,amount:String(amount),nonce});
 }
 async function submitOracleCommand(method:'grant_harvest'|'consume_fuel',args:Record<string,unknown>):Promise<ChainReceipt>{
  const previous=oracleQueue;let release!:()=>void;oracleQueue=new Promise<void>(resolve=>{release=resolve;});await previous;
  try{
-  const keyStore=new keyStores.InMemoryKeyStore();await keyStore.setKey('mainnet',process.env.NEAR_ORACLE_ACCOUNT_ID!,KeyPair.fromString(process.env.NEAR_ORACLE_PRIVATE_KEY as `ed25519:${string}`));
-  const near=await connect({networkId:'mainnet',nodeUrl:process.env.NEAR_RPC_URL||'https://rpc.mainnet.near.org',keyStore});const oracle=await near.account(process.env.NEAR_ORACLE_ACCOUNT_ID!);
+  await assertNearRpcNetwork();
+  const keyStore=new keyStores.InMemoryKeyStore();await keyStore.setKey(nearNetworkConfiguration().network,process.env.NEAR_ORACLE_ACCOUNT_ID!,KeyPair.fromString(process.env.NEAR_ORACLE_PRIVATE_KEY as `ed25519:${string}`));
+  const near=await connect({networkId:nearNetworkConfiguration().network,nodeUrl:nearNetworkConfiguration().rpcUrl,keyStore});const oracle=await near.account(process.env.NEAR_ORACLE_ACCOUNT_ID!);
   const outcome=await oracle.functionCall({contractId:process.env.NEAR_CONTRACT_ID!,methodName:method,args,gas:30_000_000_000_000n,attachedDeposit:0n});
   const final=await nearRpc<Record<string,unknown>>({tx_hash:outcome.transaction.hash,sender_account_id:process.env.NEAR_ORACLE_ACCOUNT_ID!,wait_until:'FINAL'},'tx');
   if(!executionSucceeded(final))throw new Error('The gameplay command did not finalize successfully.');
-  return{hash:outcome.transaction.hash,explorerUrl:`https://nearblocks.io/txns/${outcome.transaction.hash}`,outcome:final};
+  return{hash:outcome.transaction.hash,explorerUrl:transactionExplorerUrl(outcome.transaction.hash),outcome:final};
  }finally{release();}
 }

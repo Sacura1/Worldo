@@ -1,0 +1,6 @@
+{
+  "tool": "Built-in image_gen",
+  "prompt": "Use case: logo-brand. Asset type: production logo for a 3D exploration and industry simulation game called WORLDO. Create one polished, distinctive horizontal game-title logo on a truly transparent background. Exact text: \"WORLDO\", spelled W O R L D O. Bold custom rounded carved lettering with tactile depth, warm ivory faces, deep forest-green sides and restrained copper-gold accents. Integrate a small imaginative isometric landscape emblem above/within the word: a winding road, rolling land and a tiny industrial chimney, as a coherent compact crest, not a busy illustration. It should feel like an established PC and mobile world-building adventure game, expressive and inviting, legible at 220px wide. Subtle handcrafted material, crisp silhouette and professional kerning. Centered full mark with generous transparent padding, wide 3:2 image. No tagline, no other text, no UI, no mockup background, no cryptocurrency symbols, no generic tech globe or corporate startup aesthetic.",
+  "asset": "worldo-logo.png",
+  "transparent": true
+}

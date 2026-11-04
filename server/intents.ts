@@ -1,3 +1,4 @@
+import {nearNetworkConfiguration} from './near-config';
 import {Router} from 'express';
 import {randomUUID,createHash} from 'node:crypto';
 import {mkdir,readFile,writeFile,rename} from 'node:fs/promises';
@@ -62,6 +63,7 @@ export function assertQuoteMatches(request:Record<string,unknown>,response:Quote
 }
 export function createIntentsRouter(){
  const router=Router();
+ router.use((_req,res,next)=>{if(!nearNetworkConfiguration().intentsEnabled){res.status(409).json({error:'NEAR Intents has no testnet deployment. Use test NEAR for this testnet world; cross-chain funding is available only in mainnet mode.',network:'testnet',available:false});return;}next();});
  router.get('/tokens',async(_req,res)=>{try{res.json({tokens:await supportedTokens(),destinationAsset:DESTINATION_ASSET});}catch{res.status(503).json({error:'Supported assets could not be loaded. Try again shortly.'});}});
  router.post('/quote',async(req,res)=>{
   const dry=req.body?.dry!==false,identity=getVerifiedIdentity(req);

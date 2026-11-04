@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { PLACES } from '../../shared/types';
-import {BUILDINGS,TANKS,COUNTERS,ROADS,WORLD_COLLIDERS,type Footprint,type TankFootprint} from '../../shared/world-layout';
+import {BUILDINGS,TANKS,COUNTERS,ROADS,WORLD_COLLIDERS,type Collider,type Footprint,type TankFootprint} from '../../shared/world-layout';
+import {bodyCollides,VEHICLE_HALF_WIDTH,VEHICLE_HALF_LENGTH} from '../../shared/world-physics';
+import {TOWN_BUILDINGS,TOWN_DOORS,TOWN_TREES,TOWN_ROCKS,TOWN_FENCES,TOWN_PROPS,TOWN_LAMPS,SERVICE_NPCS,FUEL_PUMPS,TOWN_RESIDENTS,getWorldColliders,getTownInterior,type TownBuilding} from '../../shared/town';
+import type {Vec2} from '../../shared/types';
 
 export const randomGenerator=(seed:number)=>()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
 const rnd=randomGenerator(2409);
@@ -22,7 +25,7 @@ function texture(kind:'ground'|'concrete'|'metal'|'wood'|'road',base:string):THR
 }
 export function getMaterials(){
  if(Object.keys(materials).length)return materials;
- const definitions:Record<string,[string,number,number]>={concrete:['#a59f8c',.96,0],wall:['#d1c5ac',.91,0],roof:['#647473',.85,.3],darkRoof:['#3b4947',.9,.3],wood:['#86714f',.97,0],darkWood:['#594d39',.99,0],rust:['#91674b',.83,.3],steel:['#8c9993',.57,.5],darkSteel:['#434a43',.66,.65],cream:['#d7d4bd',.72,.3],yellow:['#c49b44',.73,.25],orange:['#b66c3f',.8,.2],black:['#242a25',.96,0],rubber:['#272a27',1,0],glass:['#779c9f',.3,.2],foliage:['#526c38',1,0],foliageLight:['#70834a',1,0],foliageDark:['#354e30',1,0],trunk:['#696047',1,0],stone:['#898b7a',1,0],stoneLight:['#aaa795',1,0],skin:['#b58a68',.93,0],jacket:['#596052',.95,0],pants:['#444e4b',.95,0],bag:['#8a7959',.95,0],road:['#7d7c70',1,0],dirt:['#a39672',1,0],grass:['#8e9560',1,0]};
+ const definitions:Record<string,[string,number,number]>={concrete:['#afa99a',.96,0],wall:['#d1c5ac',.91,0],roof:['#647473',.85,.3],darkRoof:['#334940',.9,.3],wood:['#967c54',.97,0],darkWood:['#594330',.99,0],rust:['#a5694b',.83,.3],steel:['#8c9993',.57,.5],darkSteel:['#343e3d',.66,.65],cream:['#eee2bf',.82,.1],yellow:['#d2ad51',.73,.25],orange:['#c47c42',.8,.2],black:['#242a25',.96,0],rubber:['#272a27',1,0],glass:['#83b5bd',.22,.2],foliage:['#547644',1,0],foliageLight:['#7d9653',1,0],foliageDark:['#35563a',1,0],trunk:['#756044',1,0],stone:['#85897c',1,0],stoneLight:['#aaa795',1,0],skin:['#b98e6e',.93,0],jacket:['#60725b',.95,0],pants:['#40505a',.95,0],bag:['#9b825e',.95,0],road:['#6a6d67',1,0],dirt:['#b3a47b',1,0],grass:['#8f9e68',1,0],brick:['#a46d53',.96,0],sage:['#7e9180',.95,0],ochre:['#c4a266',.96,0],shirtBlue:['#426e83',.98,0],shirtRed:['#9e4e43',.98,0],workOrange:['#ce8b45',.96,0],skinLight:['#d9ac88',.95,0],skinDark:['#76523c',.95,0],hairDark:['#282c29',.98,0],hairBrown:['#604332',.98,0],white:['#ece7d5',.9,0],rug:['#775247',1,0]};
  for(const [key,[color,roughness,metalness]] of Object.entries(definitions))materials[key]=new THREE.MeshStandardMaterial({color,roughness,metalness});
  for(const key of ['concrete','wall']){materials[key].map=texture('concrete','#ffffff');}
  for(const key of ['roof','darkRoof','cream'])materials[key].map=texture('metal','#ffffff');
@@ -30,6 +33,8 @@ export function getMaterials(){
  materials.grass.map=texture('ground','#d3d0b5');materials.grass.map.repeat.set(75,75);
  materials.dirt.map=texture('ground','#ddd2b4');materials.dirt.map.repeat.set(2,2);
  materials.road.map=texture('road','#d1cec4');materials.road.map.repeat.set(1,1);
+ materials.vertex=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.88});
+ materials.window=new THREE.MeshStandardMaterial({color:'#abcac4',roughness:.16,metalness:.12,transparent:true,opacity:.28,depthWrite:false,side:THREE.DoubleSide});
  return materials;
 }
 export class Builder {
@@ -45,9 +50,10 @@ export class Builder {
   const c=document.createElement('canvas');c.width=1024;c.height=256;const ctx=c.getContext('2d')!;ctx.fillStyle=bg;ctx.fillRect(0,0,1024,256);ctx.strokeStyle=fg;ctx.lineWidth=4;ctx.strokeRect(12,12,1000,232);ctx.fillStyle=fg;ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`600 ${text.length>20?53:70}px "Barlow Condensed", sans-serif`;ctx.fillText(text.toUpperCase(),512,132,940);const tex=new THREE.CanvasTexture(c);tex.colorSpace=THREE.SRGBColorSpace;
   const mat=new THREE.MeshStandardMaterial({map:tex,roughness:.9});const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat);m.position.set(x,y,z);m.rotation.y=rotation;this.root.add(m);return m;
  }
- batch(){
+ batch(vertexColors=false){
   this.root.updateMatrixWorld(true);const batches=new Map<THREE.Material,THREE.BufferGeometry[]>();const extra:THREE.Object3D[]=[];
   this.root.traverse(o=>{if(!(o instanceof THREE.Mesh))return;const mat=o.material as THREE.Material;const g=(o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone()).applyMatrix4(o.matrixWorld);if(mat===materials.road||mat===materials.dirt||mat===materials.concrete||mat===materials.wall){const p=g.attributes.position,n=g.attributes.normal,u=g.attributes.uv;for(let i=0;i<p.count;i++){const ax=Math.abs(n.getX(i)),ay=Math.abs(n.getY(i)),az=Math.abs(n.getZ(i));u.setXY(i,(ay>ax&&ay>az?p.getX(i):ax>az?p.getZ(i):p.getX(i))*.35,(ay>ax&&ay>az?p.getZ(i):p.getY(i))*.35);}}if(!batches.has(mat))batches.set(mat,[]);batches.get(mat)!.push(g);});
+  if(vertexColors){const colored:THREE.BufferGeometry[]=[];for(const [material,geometries]of batches){const color=(material as THREE.MeshStandardMaterial).color;for(const g of geometries){const values=new Float32Array(g.attributes.position.count*3);for(let i=0;i<values.length;i+=3){values[i]=color.r;values[i+1]=color.g;values[i+2]=color.b;}g.setAttribute('color',new THREE.BufferAttribute(values,3));colored.push(g);}}batches.clear();batches.set(materials.vertex,colored);}
   const group=new THREE.Group();for(const [material,geometries]of batches){const merged=mergeGeometries(geometries,false);geometries.forEach(g=>g.dispose());if(!merged)continue;const m=new THREE.Mesh(merged,material);m.castShadow=true;m.receiveShadow=true;merged.computeBoundingSphere();group.add(m);}extra.forEach(o=>group.add(o));return group;
  }
 }
@@ -65,21 +71,27 @@ function warehouse(b:Builder,footprint:Footprint,h:number,mat='wall',roof='darkR
 }
 function tank(b:Builder,footprint:TankFootprint,h=5){const {x,z,r}=footprint;b.cyl('concrete',x,.2,z,r+.25,.4);b.cyl('cream',x,h/2+.4,z,r,h);b.cyl('rust',x,1.4,z,r+.015,.35);b.cyl('darkSteel',x,h+.42,z,r+.04,.12);b.sphere('cream',x,h+.44,z,r,.25,r);for(let a=0;a<Math.PI*2;a+=Math.PI/6){const dx=Math.sin(a)*r,dz=Math.cos(a)*r;b.box('steel',x+dx,h+.9,z+dz,.04,.9,.04);}b.cyl('steel',x,h+.9,z,r,.03);b.box('steel',x-r-.12,h/2,z,.1,h,.35);for(let i=.5;i<h;i+=.38)b.box('steel',x-r-.18,i,z,.12,.04,.55);}
 
-export function createCharacter(){
- const root=new THREE.Group(),body=new Builder();
- const torso=new THREE.LatheGeometry([new THREE.Vector2(.19,.86),new THREE.Vector2(.21,.95),new THREE.Vector2(.175,1.06),new THREE.Vector2(.20,1.22),new THREE.Vector2(.245,1.35),new THREE.Vector2(.23,1.43),new THREE.Vector2(.10,1.51)],16);
- body.mesh(torso,'jacket',0,0,0,1,1,.69);body.rounded('pants',0,.86,0,.39,.17,.29);body.box('darkSteel',0,.9,0,.40,.045,.30);body.box('steel',0,.90,-.155,.07,.05,.02);
- body.rounded('bag',0,1.22,.22,.37,.45,.20);body.rounded('darkWood',0,1.16,.33,.29,.23,.07);body.box('bag',0,1.29,.35,.29,.04,.025);for(const x of[-.16,.16])body.box('bag',x,1.26,-.18,.05,.48,.035);
- for(const x of[-.11,.11])body.rounded('darkWood',x,1.25,-.176,.14,.14,.025);body.box('darkSteel',0,1.17,-.176,.015,.48,.02);
- body.cyl('skin',0,1.55,0,.085,.16);body.sphere('skin',0,1.72,-.015,.135,.185,.14);body.sphere('darkWood',0,1.77,.035,.14,.135,.115);body.sphere('jacket',0,1.85,0,.151,.065,.16);body.rounded('jacket',0,1.83,-.17,.25,.025,.17);for(const x of[-.14,.14])body.sphere('skin',x,1.71,0,.026,.044,.028);body.sphere('skin',0,1.70,-.16,.026,.035,.035);
- for(const x of[-.055,.055])body.sphere('black',x,1.74,-.15,.012,.012,.008);body.box('skin',0,1.68,-.154,.06,.04,.026);
- root.add(body.batch());
- const limbs:THREE.Group[]=[];
+export function createCharacter(style:{shirt?:string;skin?:string;hair?:string;hat?:boolean;backpack?:boolean}={}){
+ const shirt=style.shirt??'jacket',skin=style.skin??'skin',hair=style.hair??'hairBrown',root=new THREE.Group(),body=new Builder();
+ const torso=new THREE.LatheGeometry([new THREE.Vector2(.185,.86),new THREE.Vector2(.205,.97),new THREE.Vector2(.185,1.08),new THREE.Vector2(.215,1.28),new THREE.Vector2(.255,1.4),new THREE.Vector2(.23,1.445),new THREE.Vector2(.11,1.51)],24);
+ body.mesh(torso,shirt,0,0,0,1,1,.70);body.rounded('pants',0,.87,0,.40,.18,.29);body.box('darkWood',0,.94,0,.40,.04,.29);body.rounded('steel',0,.94,-.153,.055,.045,.018);
+ for(const x of[-.12,.12]){body.rounded(shirt,x,1.28,-.15,.14,.16,.018);body.box('cream',x,1.34,-.165,.09,.012,.009);}body.box('darkSteel',0,1.22,-.16,.011,.43,.01);
+ for(const side of[-1,1])body.rounded('cream',side*.062,1.46,-.09,.11,.09,.025,0,0,side*.4);
+ if(style.backpack!==false){body.rounded('bag',0,1.23,.21,.32,.4,.16);body.rounded('darkWood',0,1.15,.3,.24,.16,.05);for(const x of[-.16,.16])body.box('bag',x,1.28,-.15,.035,.4,.025);}
+ body.cyl(skin,0,1.54,0,.07,.14);body.sphere(skin,0,1.71,-.012,.135,.18,.132);body.sphere(skin,0,1.63,-.035,.10,.09,.10);
+ body.sphere(hair,0,1.795,.02,.139,.105,.132);body.sphere(hair,-.08,1.765,-.07,.077,.065,.065);
+ for(const x of[-.134,.134])body.sphere(skin,x,1.70,-.003,.024,.041,.024);
+ for(const side of[-1,1]){body.sphere('white',side*.052,1.726,-.129,.025,.012,.008);body.sphere('hairDark',side*.052,1.725,-.137,.01,.011,.006);body.box(hair,side*.052,1.754,-.127,.048,.009,.008,0,0,side*.05);}
+ body.sphere(skin,0,1.698,-.145,.024,.036,.03);body.rounded('shirtRed',0,1.658,-.132,.049,.009,.008);
+ if(style.hat!==false){body.sphere(shirt,0,1.835,.012,.145,.07,.143);body.rounded(shirt,0,1.823,-.13,.25,.025,.17);}
+ root.add(body.batch(true));const limbs:THREE.Group[]=[],knees:THREE.Group[]=[];
+ const profile=(points:number[][])=>new THREE.LatheGeometry(points.map(([radius,y])=>new THREE.Vector2(radius,y)),16);
  for(const side of[-1,1]){
-  const leg=new THREE.Group();leg.position.set(side*.13,.9,0);const l=new Builder();l.cyl('pants',0,-.22,0,.103,.46);l.cyl('pants',0,-.63,.01,.092,.39);l.rounded('black',0,-.84,-.04,.19,.13,.32);l.box('darkSteel',0,-.9,-.04,.19,.025,.33);l.rounded('jacket',side*.09,-.21,.01,.035,.18,.12);leg.add(l.batch());root.add(leg);limbs.push(leg);
-  const arm=new THREE.Group();arm.position.set(side*.29,1.44,0);const a=new Builder();a.sphere('jacket',0,-.04,0,.105,.13,.11);a.cyl('jacket',side*.025,-.2,0,.085,.36);a.cyl('jacket',side*.025,-.44,-.02,.072,.22);a.sphere('skin',side*.025,-.61,-.045,.069,.105,.065);arm.add(a.batch());root.add(arm);limbs.push(arm);
+  const leg=new THREE.Group();leg.position.set(side*.115,.9,0);leg.rotation.z=-side*.018;const thigh=new Builder();thigh.mesh(profile([[.075,-.45],[.085,-.37],[.105,-.17],[.108,-.04],[.085,.035]]),'pants',0,0,0,1,1,.92);thigh.rounded('pants',side*.075,-.16,0,.06,.21,.13);leg.add(thigh.batch(true));
+  const knee=new THREE.Group();knee.position.set(0,-.42,0);const calf=new Builder();calf.mesh(profile([[.058,-.38],[.065,-.30],[.085,-.14],[.075,0],[.069,.035]]),'pants',0,0,0,1,1,.92);calf.rounded('darkWood',0,-.395,-.035,.17,.14,.28);calf.rounded('rubber',0,-.473,-.035,.175,.027,.29);for(let n=0;n<3;n++)calf.box('cream',0,-.36,-.11-n*.018,.075,.007,.007);knee.add(calf.batch(true));leg.add(knee);knees.push(knee);root.add(leg);limbs.push(leg);
+  const arm=new THREE.Group();arm.position.set(side*.25,1.43,0);const a=new Builder();a.mesh(profile([[.067,-.31],[.077,-.21],[.086,-.08],[.07,.005],[.025,.045]]),shirt,side*.012,0,0,1,1,.92);a.mesh(profile([[.048,-.54],[.056,-.47],[.066,-.35],[.064,-.29]]),shirt,side*.017,0,-.012,1,1,.90);a.cyl('cream',side*.017,-.54,-.012,.05,.026);a.sphere(skin,side*.017,-.596,-.022,.051,.074,.035);a.sphere(skin,side*-.018,-.58,-.038,.018,.035,.021);for(let n=0;n<3;n++)a.rounded(skin,side*.017+(n-1)*.021,-.645,-.025,.017,.04,.027);arm.add(a.batch(true));root.add(arm);limbs.push(arm);
  }
- return {root,limbs};
+ return {root,limbs,knees};
 }
 export function createTruck(){
  const b=new Builder();
@@ -95,71 +107,114 @@ export function createTruck(){
  return {root,wheels,cargo};
 }
 
+function windowPanel(b:Builder,x:number,z:number,width:number,rotation=0){
+ const panel=new Builder();panel.box('window',0,1.8,0,width,1.15,.035);for(const side of[-1,1])panel.box('cream',side*width/2,1.8,-.03,.08,1.3,.10);for(const y of[1.18,1.8,2.42])panel.box('cream',0,y,-.035,width+.15,.065,.10);panel.box('cream',0,1.8,-.035,.06,1.3,.10);panel.box('darkWood',0,1.14,0,width+.25,.09,.26);panel.root.position.set(x,0,z);panel.root.rotation.y=rotation;b.root.add(panel.root);
+}
+function wallWithWindows(b:Builder,mat:string,x:number,z:number,length:number,height:number,rotation=0){
+ const wall=new Builder(),count=Math.max(1,Math.floor(length/3)),unit=length/count,windowWidth=Math.min(1.7,unit-.6);
+ for(let i=0;i<count;i++){const cx=-length/2+unit*(i+.5),side=(unit-windowWidth)/2;wall.box(mat,cx, .57,0,unit,1.14,.24);wall.box(mat,cx,(height+2.45)/2,0,unit,height-2.45,.24);for(const sign of[-1,1])wall.box(mat,cx+sign*(windowWidth/2+side/2),1.795,0,side,1.31,.24);windowPanel(wall,cx,0,windowWidth);}
+ wall.root.position.set(x,0,z);wall.root.rotation.y=rotation;b.root.add(wall.root);
+}
+function buildTownBuilding(b:Builder,def:TownBuilding){
+ const {x,z,w,d,height:h}=def,front=def.front==='south'?1:-1,frontZ=z+front*d/2,backZ=z-front*d/2;
+ b.box('concrete',x,.015,z,w+.35,.06,d+.35);b.box(def.kind==='house'?'wood':'concrete',x,.055,z,w-.25,.04,d-.25);
+ if(def.kind==='house')for(let sx=-w/2+.4;sx<w/2;sx+=.5)b.box('darkWood',x+sx,.079,z,.012,.005,d-.4);
+ wallWithWindows(b,def.wall,x-w/2,z,d,h,Math.PI/2);wallWithWindows(b,def.wall,x+w/2,z,d,h,-Math.PI/2);wallWithWindows(b,def.wall,x,backZ,w,h,front===1?0:Math.PI);
+ const side=(w-def.doorWidth)/2;
+ for(const sign of[-1,1])wallWithWindows(b,def.wall,x+sign*(def.doorWidth/2+side/2),frontZ,side,h,front===1?0:Math.PI);
+ b.box(def.wall,x,(h+2.65)/2,frontZ,def.doorWidth,h-2.65,.24);
+ for(const sign of[-1,1])b.box('cream',x+sign*(def.doorWidth/2+.045),1.36,frontZ,.10,2.72,.31);b.box('cream',x,2.73,frontZ,def.doorWidth+.2,.10,.31);
+ for(const sx of[-1,1])for(const sz of[-1,1])b.box('cream',x+sx*w/2,h/2,z+sz*d/2,.17,h,.17);
+ const roof=new Builder(),rise=w*.24,angle=Math.atan2(rise,w/2);
+ for(const sign of[-1,1]){roof.box(def.roof,x+sign*w/4,h+rise/2+.05,z,w*.57,.14,d+.8,0,0,-sign*angle);roof.box('cream',x+sign*(w/2+.17),h+.02,z,.12,.18,d+.85);}
+ for(const end of[-1,1]){const shape=new THREE.Shape();shape.moveTo(-w/2,0);shape.lineTo(w/2,0);shape.lineTo(0,rise);shape.closePath();const geo=new THREE.ShapeGeometry(shape),mesh=new THREE.Mesh(geo,getMaterials()[def.wall]);mesh.position.set(x,h,z+end*d/2);if(end<0)mesh.rotation.y=Math.PI;roof.root.add(mesh);for(const sign of[-1,1])roof.beam('cream',new THREE.Vector3(x+sign*(w/2+.2),h,z+end*(d/2+.4)),new THREE.Vector3(x,h+rise+.1,z+end*(d/2+.4)),.12);}
+ if(def.kind==='house'){
+  roof.box('brick',x+w*.28,h+1,z-d*.2,.55,2,.55);roof.box('darkSteel',x+w*.28,h+2.04,z-d*.2,.7,.10,.7);
+  b.box('wood',x,.06,frontZ+front*.9,w*.72,.08,1.7);for(const sign of[-1,1])b.box('cream',x+sign*w*.34,1.3,frontZ+front*1.5,.13,2.6,.13);
+  roof.box(def.roof,x,2.73,frontZ+front*.85,w*.8,.12,2.1,-front*.08);
+  b.label(def.name,x,2.3,frontZ+front*.17,1.4,.23,front===1?0:Math.PI,'#33463a','#efe4c7');
+ }else{
+  b.label(def.name,x,h-.45,frontZ+front*.18,Math.min(w-.6,8),.68,front===1?0:Math.PI,'#284439','#eedfbb');
+  const awning=new Builder();awning.box('darkRoof',x,2.85,frontZ+front*.75,w+.3,.12,1.6,-front*.10);for(let sx=-w/2;sx<w/2;sx+=.45)awning.box('cream',x+sx,2.87,frontZ+front*.75,.18,.015,1.55,-front*.10);roof.root.add(awning.root);
+ }
+ return roof.batch();
+}
+function shelf(b:Builder,x:number,z:number,width:number,rotation=0){
+ const s=new Builder();for(const side of[-1,1])s.box('darkSteel',side*width/2,1.15,0,.055,2.3,.65);
+ for(let y=.3;y<2.3;y+=.55){s.box('wood',0,y,0,width,.065,.65);for(let n=0;n<Math.floor(width/.4);n++){const sx=-width/2+.25+n*.4,style=(n+Math.round(y*4))%4;s.box(style===0?'cream':style===1?'shirtRed':style===2?'sage':'yellow',sx,y+.19,.02,.27,.31,.32);s.box('white',sx,y+.20,.187,.14,.11,.01);}}
+ s.root.position.set(x,0,z);s.root.rotation.y=rotation;b.root.add(s.root);
+}
+function counter(b:Builder,x:number,z:number,width:number,rotation=0){const c=new Builder();c.box('wood',0,.5,0,width,1,.65);for(let n=-width/2+.15;n<width/2;n+=.22)c.box('darkWood',n,.5,.335,.018,.91,.012);c.box('darkWood',0,1.04,0,width+.1,.10,.75);c.rounded('darkSteel',width*.3,1.16,0,.42,.2,.35);c.box('cream',width*.3,1.29,-.06,.35,.025,.22);c.root.position.set(x,0,z);c.root.rotation.y=rotation;b.root.add(c.root);}
+function furnishedHouse(b:Builder,house:TownBuilding){
+ const bedX=house.x-house.w/2+1.2,bedZ=house.z-1.2;b.box('darkWood',bedX,.28,bedZ,1.5,.5,2.5);b.rounded('white',bedX,.57,bedZ,1.4,.2,2.3);b.rounded('sage',bedX,.69,bedZ+.35,1.38,.07,1.45);b.rounded('cream',bedX,.72,bedZ-.78,1.06,.16,.43);b.box('wood',bedX,.75,bedZ-1.23,1.5,1.3,.1);
+ const tx=house.x+1.6,tz=house.z-1.6;b.box('wood',tx,.75,tz,1.7,.09,1.1);for(const sx of[-.65,.65])for(const sz of[-.4,.4])b.box('darkWood',tx+sx,.38,tz+sz,.08,.74,.08);b.cyl('cream',tx,.83,tz,.18,.025);b.cyl('shirtRed',tx+.38,.91,tz,.07,.16);b.box('cream',tx-.4,.82,tz,.35,.02,.23);
+ const sx=house.x+1.5,sz=house.z+1.7;b.rounded('shirtBlue',sx,.4,sz,1.2,.6,.7);b.rounded('shirtBlue',sx,.8,sz+.3,1.2,.6,.16);b.rounded('cream',sx-.3,.69,sz+.04,.29,.12,.26);b.box('rug',house.x,.085,house.z+.6,2.1,.012,1.8);
+ b.label('HOME IN LOWLAND',house.x+house.w/2-.15,2.1,house.z,.9,.55,-Math.PI/2,'#eee2bf','#59715a');
+}
+function hose(b:Builder,x:number,z:number){const curve=new THREE.CatmullRomCurve3([new THREE.Vector3(x+.45,1.35,z),new THREE.Vector3(x+.75,1,z+.06),new THREE.Vector3(x+.78,.35,z+.08),new THREE.Vector3(x+.52,.28,z+.08),new THREE.Vector3(x+.48,.95,z+.08)]);const mesh=new THREE.Mesh(new THREE.TubeGeometry(curve,12,.035,5,false),getMaterials().rubber);mesh.castShadow=true;b.root.add(mesh);b.box('darkSteel',x+.47,1,z+.08,.1,.32,.1,0,0,-.15);}
+
 export function createEnvironment(){
- const b=new Builder(),m=getMaterials();
- const ground=new THREE.Mesh(new THREE.PlaneGeometry(520,520,64,64),m.grass);ground.rotation.x=-Math.PI/2;ground.position.y=-.12;ground.receiveShadow=true;
- const p=ground.geometry.attributes.position;for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getY(i),dist=Math.hypot(x,z),fade=THREE.MathUtils.smoothstep(dist,105,155);if(dist>100)p.setZ(i,fade*(18+Math.sin(x*.035)*Math.cos(z*.04)*14+Math.sin(x*.08+z*.06)*5));}ground.geometry.computeVertexNormals();
- const roadSegments:{ax:number;az:number;bx:number;bz:number;width:number}[]=[];
- for(const [x1,z1,x2,z2,w]of ROADS){const dx=x2-x1,dz=z2-z1,len=Math.hypot(dx,dz),angle=Math.atan2(dx,dz);b.box('dirt',(x1+x2)/2,-.03,(z1+z2)/2,w+1.8,.08,len+1,0,angle);b.box('road',(x1+x2)/2,.014,(z1+z2)/2,w,.055,len+.3,0,angle);roadSegments.push({ax:x1,az:z1,bx:x2,bz:z2,width:w});if(w>=6){for(let s=10;s<len-8;s+=6)b.box('cream',x1+dx*s/len,.045,z1+dz*s/len,.08,.01,2.2,0,angle);}}
- // Depot is a walk-in street-front workshop, with its counter at the marked interaction point.
- warehouse(b,BUILDINGS.depot,4.5,'wall','darkRoof');b.box('black',0,1.75,9.53,4,3.1,.04);b.box('rust',0,3.6,11.2,10,.16,3,0,0,.01);
- for(const x of[-4.6,4.6])b.box('darkSteel',x,1.8,12.5,.12,3.6,.12);
- b.label('LOWLAND SUPPLY CO.',0,4.15,9.58,9,1.2);b.label('TOOLS · FUEL · PROVISIONS',0,2.8,9.65,3.7,.55);
- b.box('wood',COUNTERS.depot.x,.64,COUNTERS.depot.z,2.8,1.28,.8);b.box('darkSteel',COUNTERS.depot.x,1.3,COUNTERS.depot.z,3,.1,.85);
- for(const x of[-1.4,1.4]){b.box('darkSteel',x,1.5,9.65,.05,2.7,.3);for(let y=.4;y<2.9;y+=.65){b.box('wood',0,y,9.75,3,.07,.5);for(let n=0;n<5;n++)b.rounded(n%2?'rust':'cream',-1.1+n*.5,y+.22,9.84,.27,.4,.28);}}
- for(let i=0;i<4;i++){barrel(b,5.5+i%2*.75,10+Math.floor(i/2)*.8,i%2?'cream':'rust');crate(b,-5.4+i%2,10+Math.floor(i/2),.8);}
- b.box('concrete',0,.05,11,14,.16,5);
- const depotNpc=createCharacter();depotNpc.root.position.set(-1.7,0,10.8);depotNpc.root.rotation.y=Math.PI;b.root.add(depotNpc.root);
- // Refinery, process equipment, tanks, overhead pipe rack and pump station.
- b.box('concrete',53,.03,-27,28,.16,23);warehouse(b,BUILDINGS.refinery,4,'roof','darkRoof');
- tank(b,TANKS.east,7);tank(b,TANKS.north,7);tank(b,TANKS.west,5.5);
- for(const x of[47,53]){b.cyl('rust',x,7,-38,.65,14);for(let y=2;y<14;y+=2)b.cyl('cream',x,y,-38,.66,.55);b.cyl('darkSteel',x,14,-38,.78,.25);}
- for(const z of[-34,-24]){b.box('steel',54,3,z,18,.15,.2);for(const x of[46,62])b.box('steel',x,1.5,z,.15,3,.15);}
- for(const x of[52,53,54])b.cyl('rust',x,3.2,-28,.15,17,Math.PI/2);b.label('LOWLAND REFINERY',48,3.3,-19.8,8,.9);for(const x of[44,52])b.box('darkSteel',x,1.7,-20,.12,3.4,.12);
- b.box('wood',COUNTERS.refinery.x,.7,COUNTERS.refinery.z,3.4,1.4,.85);b.box('steel',COUNTERS.refinery.x,1.45,COUNTERS.refinery.z,3.6,.1,.95);
- b.box('darkSteel',40,1,-18,.75,2,.75);b.box('cream',40,1.85,-17.6,.63,.3,.05);b.label('FUEL',40,2.55,-17.6,1.5,.5);
- const refNpc=createCharacter();refNpc.root.position.set(45,0,-21);refNpc.root.rotation.y=Math.PI;b.root.add(refNpc.root);
- // Sawmill: open timber yard, stacked lumber and sawing shed.
- b.box('dirt',-44,0,-25,23,.1,23);warehouse(b,BUILDINGS.sawmill,5,'wood','roof');b.label('PINE & CO. SAWMILL',-44,4,-25.95,10,1);
- for(let row=0;row<3;row++)for(let i=0;i<5-row;i++){b.cyl('trunk',-50+i*.6+row*.3,.4+row*.52,-20,.29,5,Math.PI/2);b.cyl('wood',-50+i*.6+row*.3,.4+row*.52,-17.48,.24,.025,Math.PI/2);}
- for(let i=0;i<7;i++)b.box('wood',-35,.18+i*.17,-28,3,.14,6);b.box('darkSteel',-40,.72,-18,3,1.4,.85);b.label('TIMBER YARD',-38,2.5,-23,3,.65);
- const sawNpc=createCharacter();sawNpc.root.position.set(-40,0,-19);sawNpc.root.rotation.y=Math.PI;b.root.add(sawNpc.root);
- // Foundry: industrial shed, ventilation, ore bins and metal stock.
- b.box('concrete',40,.03,47,21,.15,17);warehouse(b,BUILDINGS.foundry,6,'rust','darkRoof');b.label('EASTBANK FOUNDRY',40,4.8,43.95,10,1,Math.PI);
- b.cyl('darkSteel',48,7,51,.75,14);b.cyl('rust',48,14,51,.95,.4);b.box('black',40,1.8,43.94,4,3.5,.05);b.box('orange',40,1.2,43.90,2.7,2.2,.02);
- for(let i=0;i<5;i++)b.box('steel',31+i*.3,.25,46,.2,.5,4);for(let i=0;i<8;i++)b.sphere('stone',48+rnd()*4,.3+rnd()*.5,42+rnd()*4,.5+rnd()*.5,.4,.6);
- b.box('darkSteel',37,.7,40,3.2,1.4,.8);const forgeNpc=createCharacter();forgeNpc.root.position.set(37,0,41);b.root.add(forgeNpc.root);
- // Drill on the north ridge. Triangulated derrick, drill string, pump and staging barrels.
- b.box('dirt',26,.01,-68,15,.15,13);const drillX=29,drillZ=-69;
- for(const sx of[-1,1])for(const sz of[-1,1])b.beam('yellow',new THREE.Vector3(drillX+sx*1.3,.1,drillZ+sz*1.3),new THREE.Vector3(drillX+sx*.4,9,drillZ+sz*.4),.14);
- for(let y=1;y<9;y+=1.5){const r=1.3-y*.1;for(const z of[-1,1]){b.box('darkSteel',drillX,y,drillZ+z*r,r*2,.12,.12);b.beam('yellow',new THREE.Vector3(drillX-r,y,drillZ+z*r),new THREE.Vector3(drillX+r-.15,y+1.5,drillZ+z*(r-.15)),.07);}}
- b.cyl('steel',drillX,4,drillZ,.12,8);b.box('darkSteel',drillX,.4,drillZ,3,.8,3);b.box('yellow',drillX+3,1,drillZ,2,2,2);b.box('darkSteel',drillX+3,2.2,drillZ,2.1,.3,2.1);for(let i=0;i<5;i++)barrel(b,21+i*.7,-71);b.label('NORTH RIDGE / SURVEY AREA',24,2.4,-61.8,5,.9);for(const x of[22,26])b.box('wood',x,1.2,-61.9,.12,2.4,.12);
- // Ore seam with angular exposed rocks, machinery, and marked quarry entrance.
- for(let i=0;i<24;i++){const x=71+rnd()*13,z=26+rnd()*18,r=.7+rnd()*2;const mesh=b.sphere(i%2?'stone':'stoneLight',x,r*.4,z,r,r*.8,r*.8);mesh.rotation.set(rnd(),rnd(),rnd());}
- b.box('yellow',73,.8,34,3,1.2,2);b.box('glass',73,1.8,34,1.5,1.1,1.4);b.beam('yellow',new THREE.Vector3(73,1.8,33),new THREE.Vector3(76,3,31),.35);b.beam('yellow',new THREE.Vector3(76,3,31),new THREE.Vector3(77,.4,29),.3);b.box('darkSteel',77,.3,29,1.5,.5,1);b.label('STONECUT QUARRY',67,2.3,31,4.5,.8);for(const x of[65,69])b.box('wood',x,1.2,30.9,.12,2.4,.12);
- // Private refinery plot: measured foundation and a sign at its entrance.
- b.box('dirt',-37,.015,44,17,.1,14);for(const x of[-44,-30])for(const z of[38,50]){b.box('wood',x,.7,z,.13,1.4,.13);b.box('cream',x,1.2,z,.18,.2,.18);}fence(b,-44,50,14);b.label('RIVERSIDE / BUILDING PLOT',-37,2,38.2,4.5,.8);b.box('wood',-39,1,38.1,.12,2,.12);b.box('wood',-35,1,38.1,.12,2,.12);
- // Town details make human-scale navigation legible.
- fence(b,12,15,18,Math.PI/2);fence(b,-15,20,18,Math.PI/2);fence(b,-55,-34,20);fence(b,38,-42,28);
- for(const [x,z]of[[6,18],[-6,-2],[21,-13],[-24,-17],[31,33],[43,-15]])lamp(b,x,z,Math.PI*.5);
- for(const footprint of[BUILDINGS.westHouse,BUILDINGS.eastHouse]){const {x}=footprint;warehouse(b,footprint,3.4,'wall','rust');b.box('glass',x,1.9,-2.46,2.6,1.1,.05);b.box('darkWood',x+1.8,1.3,-2.43,1.1,2.5,.05);}
- b.label('LOWLAND',-12,3.2,-2.4,4.8,.7);b.label('WORKSHOP',12,3.2,-2.4,4.8,.7);
- for(let i=0;i<6;i++){const x=-7,z=24-i*12;b.box('trunk',x,4.2,z,.17,8.4,.17);b.box('trunk',x,7.6,z,2.4,.12,.12);if(i<5)for(const dx of[-.85,.85])b.beam('darkSteel',new THREE.Vector3(x+dx,7.8,z),new THREE.Vector3(x+dx,7.8,z-12),.018);}
- function roadDistance(x:number,z:number){let min=999;for(const s of roadSegments){const dx=s.bx-s.ax,dz=s.bz-s.az,t=THREE.MathUtils.clamp(((x-s.ax)*dx+(z-s.az)*dz)/(dx*dx+dz*dz),0,1);min=Math.min(min,Math.hypot(x-s.ax-t*dx,z-s.az-t*dz)-s.width/2);}return min;}
- const trees=new Builder(),rocks=new Builder();
- const tree=(x:number,z:number,size:number,pine:boolean)=>{trees.cyl('trunk',x,size*.45,z,size*.055,size*.9);if(pine){for(let j=0;j<3;j++)trees.cone(j===1?'foliageLight':'foliageDark',x,size*(.52+j*.17),z,size*(.36-j*.065),size*.62);}else{for(let j=0;j<4;j++){const a=j*2.4;trees.sphere(j%2?'foliage':'foliageLight',x+Math.sin(a)*size*.18,size*(.72+j*.045),z+Math.cos(a)*size*.18,size*.3,size*.27,size*.3);}}};
- for(let i=0;i<380;i++){const x=(rnd()-.5)*250,z=(rnd()-.5)*240;if(roadDistance(x,z)<4||PLACES.some(p=>Math.hypot(x-p.position.x,z-p.position.z)<19)||Math.hypot(x,z)<25)continue;tree(x,z,4+rnd()*5,x<0||rnd()>.5);}
- for(let i=0;i<22;i++){const x=-65+(rnd()-.5)*18,z=-60+(rnd()-.5)*19;if(Math.hypot(x+62,z+55)>4)tree(x,z,5+rnd()*4,true);}
- const logs=new Builder();for(let i=0;i<4;i++)logs.cyl('trunk',-62+i*.7,.35,-58,.32,3.2,Math.PI/2);b.root.add(logs.root);b.label('PINEWOOD / FORESTRY',-61,2,-51,4,.8);for(const x of[-62.7,-59.3])b.box('wood',x,1,-51.1,.12,2,.12);
- for(let i=0;i<120;i++){const x=(rnd()-.5)*220,z=(rnd()-.5)*220;if(roadDistance(x,z)<4||PLACES.some(p=>Math.hypot(x-p.position.x,z-p.position.z)<14))continue;const r=.4+rnd()*1.4;rocks.sphere(i%2?'stone':'stoneLight',x,r*.3,z,r,r*.5,r*.7);}
- // Low-detail perimeter silhouettes and cultivated field rows.
- const grass=new Builder(),blade=new THREE.BufferGeometry();blade.setAttribute('position',new THREE.Float32BufferAttribute([-.045,0,0,.045,0,0,.025,.4,0],3));blade.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,1,0,.5,1],2));blade.computeVertexNormals();materials.foliageLight.side=THREE.DoubleSide;materials.foliage.side=THREE.DoubleSide;
- for(let i=0;i<2400;i++){const x=(rnd()-.5)*190,z=(rnd()-.5)*190;if(roadDistance(x,z)<1.2||PLACES.some(p=>Math.hypot(x-p.position.x,z-p.position.z)<13))continue;for(let j=0;j<3;j++)grass.mesh(blade,i%3?'foliageLight':'foliage',x,0,z,1,.5+rnd()*.9,1,0,rnd()*Math.PI,0);}
- for(let i=0;i<18;i++)b.box('dirt',-90+i*.8,-.01,25,.22,.03,30);
- const sceneGroup=new THREE.Group();sceneGroup.add(ground,b.batch(),trees.batch(),rocks.batch(),grass.batch());
- // A modest local buildable refinery is activated when player purchases the facility.
+ const b=new Builder(),sceneGroup=new THREE.Group(),roofs=new Map<string,THREE.Group>(),doorGroups=new Map<string,THREE.Group>();
+ // Every traversable coordinate is exactly level. Raised land starts beyond the world boundary.
+ const ground=new THREE.Mesh(new THREE.PlaneGeometry(520,520,1,1),getMaterials().grass);ground.rotation.x=-Math.PI/2;ground.position.y=-.025;ground.receiveShadow=true;sceneGroup.add(ground);
+ const hills=new Builder();for(let i=0;i<18;i++){const angle=i/18*Math.PI*2,r=(151+(i%3)*13)/Math.max(Math.abs(Math.sin(angle)),Math.abs(Math.cos(angle)));hills.sphere(i%2?'foliage':'foliageLight',Math.sin(angle)*r,6,Math.cos(angle)*r,28,15+(i%4)*4,24);}sceneGroup.add(hills.batch());
+ for(const [ax,az,bx,bz,width]of ROADS){const dx=bx-ax,dz=bz-az,length=Math.hypot(dx,dz),angle=Math.atan2(dx,dz);b.box('dirt',(ax+bx)/2,-.005,(az+bz)/2,width+1.2,.03,length+.4,0,angle);b.box('road',(ax+bx)/2,.012,(az+bz)/2,width,.025,length+.3,0,angle);if(width>=6)for(let t=4;t<length-3;t+=5)b.box('cream',ax+dx*t/length,.028,az+dz*t/length,.065,.008,1.8,0,angle);}
+ // Shops have real rooms, a door aperture and a separate roof that cuts away indoors.
+ for(const building of TOWN_BUILDINGS){const roof=buildTownBuilding(b,building);roofs.set(building.id,roof);sceneGroup.add(roof);if(building.kind==='house')furnishedHouse(b,building);}
+ for(const door of TOWN_DOORS){const leaf=new Builder(),isHouse=door.buildingId.includes('house');leaf.box(isHouse?'wood':'darkRoof',door.width/2,.58,0,door.width,1.16,.12);leaf.box(isHouse?'wood':'darkRoof',door.width/2,2.52,0,door.width,.16,.12);for(const sx of[.07,door.width-.07])leaf.box(isHouse?'wood':'darkRoof',sx,1.8,0,.14,1.28,.12);leaf.box('window',door.width/2,1.8,0,door.width-.28,1.28,.035);for(const y of[1.18,2.42])leaf.box('cream',door.width/2,y,.082,door.width-.2,.045,.03);leaf.box('steel',door.width-.18,1.05,.13,.035,.23,.06);const group=leaf.batch();group.position.set(door.hinge.x,0,door.hinge.z);doorGroups.set(door.id,group);sceneGroup.add(group);}
+ counter(b,-2,4.2,4.3);shelf(b,-5,4.3,5,Math.PI/2);shelf(b,5,4.3,5,-Math.PI/2);shelf(b,0,1,5.7);b.label('TOOLS  /  MAPS  /  PROVISIONS',0,2.9,1,5,.42);
+ counter(b,48,-27.6,3.4);shelf(b,52.8,-31.5,3,Math.PI/2);b.label('CONTROL ROOM',50,2.7,-33.7,3.3,.6);for(let i=0;i<4;i++){b.box('darkSteel',47+i*.55,1.5,-33.7,.43,.75,.18);b.cyl(i%2?'sage':'orange',47+i*.55,1.6,-33.57,.06,.025,Math.PI/2);}
+ counter(b,-41,-25.5,3.2);shelf(b,-47.5,-30,3.5,Math.PI/2);b.label('LUMBER  /  MILLING',-44,2.9,-34.7,4,.5);
+ counter(b,37,45.5,3.2,Math.PI);shelf(b,43,50,3.5);b.label('IRONWORK  /  FABRICATION',40,3,53.7,5,.6,Math.PI);
+ // A proper roadside filling station, with working-height pumps, hoses and shelter.
+ b.box('concrete',9.65,.018,15.5,8.5,.03,12);for(const x of[5.8,13.5])for(const z of[10,21]){b.box('cream',x,2,z,.25,4,.25);b.box('darkRoof',x,.4,z,.26,.8,.26);}
+ b.box('darkRoof',9.65,4.06,15.5,8.8,.32,12.2);b.box('cream',9.65,4.23,15.5,9,.055,12.4);b.label('LOWLAND  /  FUEL & SERVICE',9.65,4.06,21.65,8.1,.45);b.label('PETROL',5.21,4.06,15.5,5,.45,-Math.PI/2);
+ for(const pump of FUEL_PUMPS){const {x,z}=pump.position;b.rounded('concrete',x,.055,z,1.1,.1,.7);b.rounded('darkRoof',x,.5,z,.85,.9,.6);b.rounded('cream',x,1.31,z,.9,.72,.63);b.box('black',x,1.45,z+.326,.63,.23,.015);b.label('PETROL',x,1.13,z+.335,.64,.18,0,'#ece7d5','#284439');b.label('95',x,1.45,z+.344,.23,.14,0,'#242a25','#b8d4ac');hose(b,x,z);}
+ // Refinery pipework connects recognisable storage tanks and a moving pumping arm.
+ b.box('concrete',53,.015,-29,29,.025,26);tank(b,TANKS.east,7);tank(b,TANKS.north,7);tank(b,TANKS.west,5.5);
+ for(const z of[-34,-24]){b.box('steel',56,3.7,z,16,.16,.2);for(const x of[49,63]){b.box('steel',x,2,z,.18,4,.18);}}
+ for(const x of[56,57,58]){b.cyl('rust',x,3.9,-28,.12,17,Math.PI/2);b.cyl('steel',x,2,-19.7,.12,3.8);}
+ for(const x of[47,53]){b.cyl('brick',x,7,-39,.62,14);for(let y=3;y<14;y+=2)b.cyl('cream',x,y,-39,.63,.48);b.cyl('darkSteel',x,14.05,-39,.74,.22);}
+ b.box('concrete',56,.08,-34,1.6,.16,1.3);for(const side of[-1,1])b.beam('darkSteel',new THREE.Vector3(56+side*.65,.15,-34),new THREE.Vector3(56,1.9,-34),.16);b.cyl('steel',56,1.9,-34,.18,.55,Math.PI/2);
+ const pumpArm=new THREE.Group(),pa=new Builder();pa.box('yellow',0,0,0,4,.20,.28);pa.rounded('darkSteel',-1.8,-.27,0,.6,.8,.4);pumpArm.add(pa.batch());pumpArm.position.set(56,1.9,-34);sceneGroup.add(pumpArm);
+ // Sawmill and foundry exterior machinery complements their staffed interiors.
+ b.box('dirt',-44,-.005,-28,27,.025,24);b.box('darkSteel',-34,.48,-30,2,.9,3.5);b.box('wood',-34,1.04,-30,2.2,.1,3.7);
+ const saw=new THREE.Mesh(new THREE.CylinderGeometry(.48,.48,.055,24),getMaterials().steel);saw.rotation.z=Math.PI/2;saw.position.set(-34,1.17,-30);sceneGroup.add(saw);
+ b.box('concrete',40,.012,48,27,.025,22);b.box('darkSteel',48,.8,49,2,1.6,3);b.box('orange',48,1.15,47.48,1.1,.6,.02);b.cyl('darkSteel',48,5.8,51,.55,11.6);b.cyl('rust',48,11.65,51,.7,.2);
+ // A working drill head gives the ridge activity without exposing a private deposit.
+ b.box('dirt',26,0,-68,15,.02,13);for(const sx of[-1,1])for(const sz of[-1,1])b.beam('yellow',new THREE.Vector3(29+sx*1.35,0,-69+sz*1.35),new THREE.Vector3(29+sx*.35,8,-69+sz*.35),.13);
+ for(let y=1;y<8;y+=1.4){const r=1.35-y*.125;for(const sign of[-1,1])b.beam('yellow',new THREE.Vector3(29-r,y,-69+sign*r),new THREE.Vector3(29+r-.175,y+1.4,-69+sign*(r-.175)),.07);}
+ b.box('darkSteel',29,.4,-69,3,.8,3);b.box('yellow',32,1,-69,2.2,2,2.2);const drill=new THREE.Mesh(new THREE.CylinderGeometry(.11,.11,6,8),getMaterials().steel);drill.position.set(29,3.5,-69);sceneGroup.add(drill);b.label('NORTH RIDGE / SURVEY AREA',25,2.3,-61.5,5,.65);
+ b.label('STONECUT QUARRY',67,2.3,31,4.7,.7);b.box('yellow',73,.75,34,3,1.5,2);b.box('glass',73,1.6,34,1.3,.9,1.3);b.beam('yellow',new THREE.Vector3(73,1.8,33),new THREE.Vector3(76,3.2,31),.25);
+ b.box('dirt',-37,0,44,17,.025,14);b.label('RIVERSIDE / BUILDING PLOT',-37,2.3,38,4.8,.6);
+ // Solid scenery uses the same deterministic footprints as authoritative movement.
+ for(const tree of TOWN_TREES){b.cyl('trunk',tree.x,tree.height*.28,tree.z,tree.radius,tree.height*.56);if(tree.type==='pine'){for(let n=0;n<3;n++)b.cone(n%2?'foliage':'foliageDark',tree.x,tree.height*(.43+n*.18),tree.z,tree.height*(.30-n*.065),tree.height*.48);}else{for(let n=0;n<5;n++){const angle=n/5*Math.PI*2;b.sphere(n%2?'foliageLight':'foliage',tree.x+Math.sin(angle)*.85,tree.height*.72+(n%2)*.6,tree.z+Math.cos(angle)*.85,tree.height*.24,tree.height*.22,tree.height*.24);}b.beam('trunk',new THREE.Vector3(tree.x,tree.height*.4,tree.z),new THREE.Vector3(tree.x+.7,tree.height*.65,tree.z),tree.radius*.7);}}
+ for(const rock of TOWN_ROCKS){const mesh=b.mesh(new THREE.DodecahedronGeometry(1,0),'stone',rock.x,rock.height/2,rock.z,rock.w/2,rock.height/2,rock.d/2,0,rock.rotation,0);mesh.castShadow=true;}
+ for(const f of TOWN_FENCES)fence(b,f.x,f.z,f.length,f.axis==='x'?0:-Math.PI/2);
+ for(const p of TOWN_PROPS){if(p.kind==='barrel')barrel(b,p.x,p.z,'rust');else if(p.kind==='crate')crate(b,p.x,p.z,p.w,p.height/2);else if(p.kind==='bench'){b.box('wood',p.x,.45,p.z,p.w,.12,p.d);b.box('wood',p.x,.78,p.z+.28,p.w,.6,.12);for(const side of[-1,1])b.box('darkSteel',p.x+side*p.w*.36,.22,p.z,.07,.45,p.d*.8);}else if(p.kind==='planter'){b.box('wood',p.x,.3,p.z,p.w,.6,p.d);b.box('dirt',p.x,.61,p.z,p.w-.12,.04,p.d-.12);for(let n=0;n<4;n++)b.sphere('foliage',p.x+(n%2-.5)*.4,.8,p.z+(Math.floor(n/2)-.5)*.3,.3,.3,.3);}else if(p.kind==='timber'){for(let row=0;row<3;row++)for(let n=0;n<4-row;n++)b.cyl('trunk',p.x+(n-(3-row)/2)*.6,.3+row*.5,p.z,.29,p.d,Math.PI/2);}}
+ for(const p of TOWN_LAMPS)lamp(b,p.x,p.z,Math.PI/2);
+ const grass=new Builder(),r=randomGenerator(3932),blade=new THREE.BufferGeometry();blade.setAttribute('position',new THREE.Float32BufferAttribute([-.04,0,0,.04,0,0,0,.42,0],3));blade.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,1,0,.5,1],2));blade.computeVertexNormals();getMaterials().foliage.side=THREE.DoubleSide;
+ for(let i=0;i<1400;i++){const x=(r()-.5)*194,z=(r()-.5)*194;if(TOWN_BUILDINGS.some(v=>Math.abs(x-v.x)<v.w/2+4&&Math.abs(z-v.z)<v.d/2+4)||Math.hypot(x,z)<30)continue;const nearRoad=ROADS.some(([ax,az,bx,bz,w])=>{const dx=bx-ax,dz=bz-az,t=THREE.MathUtils.clamp(((x-ax)*dx+(z-az)*dz)/(dx*dx+dz*dz),0,1);return Math.hypot(x-ax-t*dx,z-az-t*dz)<w/2+1;});if(!nearRoad)grass.mesh(blade,'foliage',x,0,z,1,.6+r(),1,0,r()*Math.PI,0);}
+ sceneGroup.add(b.batch(),grass.batch());
  const facilityBuilder=new Builder();tank(facilityBuilder,{x:-37,z:44,r:1.7},3.6);facilityBuilder.box('rust',-32,1,44,2,2,3);facilityBuilder.cyl('steel',-35,1,44,.1,5,0,0,Math.PI/2);const facility=facilityBuilder.batch();facility.visible=false;sceneGroup.add(facility);
- return {group:sceneGroup,colliders:WORLD_COLLIDERS,facility};
+ const sellers=SERVICE_NPCS.map((npc,i)=>{const character=createCharacter({...npc,hat:i===1||i===4,backpack:false});character.root.position.set(npc.position.x,0,npc.position.z);character.root.rotation.y=npc.heading;sceneGroup.add(character.root);return{...character,npc,phase:i*1.7};});
+ const residents=TOWN_RESIDENTS.map((npc,i)=>{const character=createCharacter({...npc,hat:!!npc.carrying,backpack:false});character.root.position.set(npc.route[0].x,0,npc.route[0].z);if(npc.carrying){const prop=new Builder();if(npc.carrying==='box')prop.box('wood',0,1.02,-.45,.55,.43,.4);else if(npc.carrying==='timber')prop.box('wood',.12,1.46,-.03,.3,.22,1.9);else{prop.box('darkSteel',.32,.74,-.16,.24,.24,.16);prop.box('steel',.32,.93,-.16,.2,.05,.03);}character.root.add(prop.batch(true));}sceneGroup.add(character.root);return{...character,npc,waypoint:1,pause:i*.6,cycle:i,blocked:0};});
+ let openDoors=new Set<string>(),colliders=getWorldColliders(openDoors);
+ return{group:sceneGroup,facility,get colliders(){return colliders;},getColliders:()=>colliders,getNpcColliders:():readonly Collider[]=>residents.map(actor=>({x:actor.root.position.x,z:actor.root.position.z,w:.6,d:.6,height:1.8,kind:'npc',id:actor.npc.id})),getInterior:getTownInterior,
+  setDoors(value:ReadonlySet<string>|readonly string[]|Record<string,boolean>){openDoors=value instanceof Set?new Set(value):Array.isArray(value)?new Set(value):new Set(Object.entries(value).filter(([,open])=>open).map(([id])=>id));colliders=getWorldColliders(openDoors);},
+  tick(dt:number,elapsed:number,player:Vec2,truck?:{position:Vec2;heading:number}){
+   const interior=getTownInterior(player);for(const [id,roof]of roofs)roof.visible=interior?.id!==id;
+   for(const [id,door]of doorGroups)door.rotation.y=THREE.MathUtils.damp(door.rotation.y,openDoors.has(id)?Math.PI/2:0,7,dt);
+   pumpArm.rotation.z=Math.sin(elapsed*1.7)*.24;saw.rotation.x+=dt*8;drill.position.y=3.5+Math.sin(elapsed*2)*.15;
+   for(const s of sellers){const distance=Math.hypot(s.npc.position.x-player.x,s.npc.position.z-player.z);s.root.visible=distance<65;if(!s.root.visible)continue;s.limbs[1].rotation.x=.10+Math.sin(elapsed*.8+s.phase)*.07;s.limbs[3].rotation.x=.12+Math.sin(elapsed*.65+s.phase)*.09;s.root.position.y=Math.sin(elapsed*1.5+s.phase)*.008;}
+   for(const actor of residents){actor.root.visible=Math.hypot(actor.root.position.x-player.x,actor.root.position.z-player.z)<70;let moving=false;
+    if(actor.pause>0)actor.pause-=dt;else{const target=actor.npc.route[actor.waypoint],dx=target.x-actor.root.position.x,dz=target.z-actor.root.position.z,distance=Math.hypot(dx,dz);if(distance<.18){actor.waypoint=(actor.waypoint+1)%actor.npc.route.length;actor.pause=actor.npc.pause;actor.blocked=0;}else{const step=Math.min(distance,actor.npc.speed*dt),nx=actor.root.position.x+dx/distance*step,nz=actor.root.position.z+dz/distance*step;const blocked=colliders.some(c=>Math.abs(nx-c.x)<c.w/2+.22&&Math.abs(nz-c.z)<c.d/2+.22)||Math.hypot(nx-player.x,nz-player.z)<.75||(truck!==undefined&&bodyCollides({x:nx,z:nz},0,false,[{x:truck.position.x,z:truck.position.z,w:VEHICLE_HALF_WIDTH*2,d:VEHICLE_HALF_LENGTH*2,rotation:truck.heading}]));if(!blocked){actor.root.position.x=nx;actor.root.position.z=nz;moving=true;actor.blocked=0;}else{actor.blocked+=dt;if(actor.blocked>1){actor.waypoint=(actor.waypoint+1)%actor.npc.route.length;actor.blocked=0;}}actor.root.rotation.y=Math.atan2(-dx,-dz);}}
+    actor.cycle+=moving?dt*actor.npc.speed*5:0;for(let i=0;i<actor.limbs.length;i++){const walking=Math.sin(actor.cycle+(i<2?0:Math.PI))*(i%2===0?.42:.35)*(i%2===0?1:-1);actor.limbs[i].rotation.x=THREE.MathUtils.damp(actor.limbs[i].rotation.x,moving?walking:0,8,dt);}if(actor.npc.carrying==='box')actor.limbs[1].rotation.x=actor.limbs[3].rotation.x=1.1;else if(actor.npc.carrying==='timber')actor.limbs[3].rotation.x=1.8;
+    actor.knees.forEach((knee,index)=>{knee.rotation.x=THREE.MathUtils.damp(knee.rotation.x,moving?-Math.max(0,-Math.sin(actor.cycle+index*Math.PI))*.65:0,9,dt);});
+    if(!moving&&actor.npc.work)actor.limbs[3].rotation.x=actor.npc.work==='hammer'?.8+Math.sin(elapsed*4)*.55:.5+Math.sin(elapsed*1.7)*.25;
+   }
+  }
+ };
 }
 
 export function disposeAssets(){for(const m of Object.values(materials)){m.map?.dispose();m.dispose();}for(const k of Object.keys(materials))delete materials[k];}

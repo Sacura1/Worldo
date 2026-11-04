@@ -1,3 +1,5 @@
+import {SERVICE_NPCS} from '../shared/town';
+import {nearNetworkConfiguration} from './near-config';
 import {Router,type Request} from 'express';
 import {createHash,randomUUID} from 'node:crypto';
 import {getVerifiedIdentity} from './near';
@@ -20,17 +22,17 @@ export interface LiveGateway {
 }
 const defaultGateway:LiveGateway={configured:chain.gameChainConfigured,read:chain.readLiveEconomy,quote:chain.liveTradeQuote,harvest:chain.submitHarvestGrant,fuel:chain.submitFuelConsumption,merchants:chain.merchantAccounts};
 const UNIT=10n**21n;
-const accountKey=(accountId:string)=>createHash('sha256').update(`lowland-mainnet-v1:${accountId}`).digest('hex');
+const accountKey=(accountId:string)=>createHash('sha256').update(`lowland-${nearNetworkConfiguration().network}-v1:${accountId}`).digest('hex');
 const nearAmount=(amount:string)=>{const n=Number(amount)/1e24;if(!Number.isFinite(n))throw new Error('Invalid chain balance');return n;};
 const distance=(a:{x:number;z:number},b:{x:number;z:number})=>Math.hypot(a.x-b.x,a.z-b.z);
 const assert=(ok:unknown,message:string,status=400)=>{if(!ok)throw new GameError(message,status);};
-const isNear=(state:GameState,place:PlaceId)=>distance(state.player.position,PLACES.find(p=>p.id===place)!.position)<=10;
+const isNear=(state:GameState,place:PlaceId)=>distance(state.player.position,PLACES.find(p=>p.id===place)!.position)<=10||SERVICE_NPCS.some(n=>n.place===place&&distance(state.player.position,n.position)<=3.5);
 const requireNear=(state:GameState,place:PlaceId)=>assert(isNear(state,place),'Move closer to this business or resource site.');
 const note=(state:GameState,text:string)=>{state.activities.unshift({id:randomUUID(),text,at:Date.now()});state.activities=state.activities.slice(0,30);};
 
 export function projectChainState(saved:SavedGame,accountId:string,economy:Economy):SavedGame {
- assert(economy.player,'Register your game account before entering mainnet.',409);assert(!economy.paused,'The mainnet economy is paused.',503);
- assert(economy.merchants.length===4&&economy.merchants.every(m=>m.account),'All four mainnet businesses must be registered.',503);
+ assert(economy.player,'Register your game account before entering chain.',409);assert(!economy.paused,'The chain economy is paused.',503);
+ assert(economy.merchants.length===4&&economy.merchants.every(m=>m.account),'All four chain businesses must be registered.',503);
  const next=structuredClone(saved),s=next.state,p=economy.player!;
  next.meta.confirmedOracleNonce=Math.max(next.meta.confirmedOracleNonce??0,p.harvest_nonce);
  s.mode='live';s.player.id=accountId;s.player.balance=nearAmount(p.balance);s.player.inventory=chain.inventoryFromChain(p);s.player.facility=p.refinery;
@@ -50,7 +52,7 @@ export class LiveGameService {
   const economy=await this.gateway.read(accountId);
   const saved=await this.store.mutate(key,old=>{
    const n=projectChainState(old,accountId,economy);
-   if(old.state.mode!=='live'){n.state.activities=[];note(n.state,'Mainnet world started. Inventory and balances are read from the game contract.');}
+   if(old.state.mode!=='live'){n.state.activities=[];note(n.state,'Chain world started. Inventory and balances are read from the game contract.');}
    const today=Math.floor(Date.now()/86400000),elapsed=Math.max(0,today-(n.meta.liveDay??today));
    if(elapsed&&!n.meta.pendingOracle){n.state.day+=elapsed;n.state.deposits={crude:Math.min(80,(n.state.deposits?.crude??0)+12*elapsed),ore:Math.min(100,(n.state.deposits?.ore??0)+16*elapsed),timber:Math.min(100,(n.state.deposits?.timber??0)+16*elapsed)};}
    if(!n.meta.pendingOracle)n.meta.liveDay=today;n.state.revision++;return n;
@@ -60,7 +62,7 @@ export class LiveGameService {
  private async reconcile(accountId:string){
   const key=this.key(accountId),current=await this.store.get(key),pending=current?.meta.pendingOracle;
   if(!pending)return;
-  const economy=await this.gateway.read(accountId);assert(economy.player,'The mainnet account is unavailable.',503);
+  const economy=await this.gateway.read(accountId);assert(economy.player,'The chain account is unavailable.',503);
   const nonce=economy.player!.harvest_nonce;
   if(nonce<pending.nonce)return;
   assert(nonce===pending.nonce,'An oracle command needs operator review before this world can continue.',409);
@@ -96,10 +98,10 @@ export class LiveGameService {
   return{unitPrice:nearAmount(unitYocto),total:nearAmount(totalYocto),totalYocto,reason:'Live contract quote · price changes with stock'};
  }
  async action(accountId:string,action:GameAction,requestId:string):Promise<{state:GameState;chainAction?:ChainAction}>{
-  const key=this.key(accountId);let saved=await this.store.get(key);assert(saved?.state.mode==='live','Open your mainnet world first.',409);
+  const key=this.key(accountId);let saved=await this.store.get(key);assert(saved?.state.mode==='live','Open your chain world first.',409);
   if(saved!.meta.pendingOracle){await this.reconcile(accountId);saved=await this.store.get(key);assert(!saved!.meta.pendingOracle,'A previous resource transaction is awaiting confirmation. Use Check transaction before continuing.',409);}
   if(saved!.meta.requests.some(r=>r.id===requestId)||saved!.meta.oracleReceipts?.[requestId])return{state:saved!.state};
-  if(['move','enterVehicle','exitVehicle','survey','rest','scanner'].includes(action.type)){
+  if(['move','enterVehicle','exitVehicle','survey','rest','scanner','toggleDoor'].includes(action.type)){
    const result=await this.store.mutate(key,old=>{
     assert(!old.meta.pendingOracle,'A resource transaction is pending.',409);if(old.meta.requests.some(r=>r.id===requestId))return old;
     let n:SavedGame;
@@ -109,7 +111,7 @@ export class LiveGameService {
     n.meta.requests=n.meta.requests.slice(-255);n.meta.requests.push({id:requestId,at:Date.now()});return n;
    });return{state:result.state};
   }
-  assert(action.type!=='advance','Mainnet time cannot be fast-forwarded. Use the practice world for simulations.');
+  assert(action.type!=='advance','Chain time cannot be fast-forwarded. Use the practice world for simulations.');
   const economy=await this.gateway.read(accountId);
   saved=await this.store.mutate(key,old=>{const n=projectChainState(old,accountId,economy);n.state.revision++;return n;});
   const state=saved.state,p=state.player;
@@ -138,21 +140,21 @@ export class LiveGameService {
    transaction={method:'trade',args:{merchant_id:this.gateway.merchants()[action.merchant]!,token_id:action.resource,amount:String(action.quantity),buy:action.side==='buy',limit:quote.totalYocto},deposit:'1',...(action.side==='buy'?{costYocto:quote.totalYocto}:{receiveYocto:quote.totalYocto}),label:`${action.side==='buy'?'Buy':'Sell'} ${action.quantity} ${RESOURCE_NAMES[action.resource].toLowerCase()} for ${quote.total} NEAR`};
   }else if(action.type==='process'){
    const recipe=RECIPES[action.resource];assert(action.quantity>0&&action.quantity%2===0,'Processing needs 2 raw materials per batch.');assert(p.inventory[action.resource]>=action.quantity,'You do not have enough raw material.');const batches=action.quantity/2;
-   if(p.facility&&isNear(state,'plot')){assert(action.resource==='crude','Your mainnet refinery processes crude oil only.');transaction={method:'refine_owned',args:{batches},deposit:'1',label:`Refine ${action.quantity} crude oil into ${batches} petrol · no service fee`};}
+   if(p.facility&&isNear(state,'plot')){assert(action.resource==='crude','Your chain refinery processes crude oil only.');transaction={method:'refine_owned',args:{batches},deposit:'1',label:`Refine ${action.quantity} crude oil into ${batches} petrol · no service fee`};}
    else{requireNear(state,recipe.place);assert(BigInt(economy.player!.balance)>=UNIT*BigInt(batches),'Your game account needs more NEAR for processing.');transaction={method:'process',args:{merchant_id:this.gateway.merchants()[recipe.place]!,token_id:action.resource,batches},deposit:'1',costYocto:(UNIT*BigInt(batches)).toString(),label:`Process ${action.quantity} ${RESOURCE_NAMES[action.resource].toLowerCase()} · ${(batches*.001).toFixed(3)} NEAR service fee`};}
   }else if(action.type==='build'){
    requireNear(state,'plot');assert(!p.facility,'Your refinery is already built.');assert(p.inventory.steel>=10&&p.inventory.planks>=10,'Building needs 10 steel and 10 planks.');transaction={method:'build_refinery',args:{},deposit:'1',label:'Build your refinery · consumes 10 steel and 10 planks'};
-  }else throw new GameError('This mainnet action is not supported.');
+  }else throw new GameError('This chain action is not supported.');
   transaction.receiverId=process.env.NEAR_CONTRACT_ID;return{state,chainAction:transaction};
  }
 }
 
 export function createLiveRouter(store:GameStore){
  const router=Router(),service=new LiveGameService(store);
- const identity=(req:Request)=>{assert(chain.gameChainConfigured(),'Mainnet gameplay requires configured Auth, contract, oracle, merchants and Neon.',503);const i=getVerifiedIdentity(req);assert(i,'Sign in with NEAR Auth before entering mainnet.',401);return i!;};
+ const identity=(req:Request)=>{assert(chain.gameChainConfigured(),'Chain gameplay requires configured Auth, contract, oracle, merchants and Neon.',503);const i=getVerifiedIdentity(req);assert(i,'Sign in with NEAR Auth before entering chain.',401);return i!;};
  router.get('/session',async(req,res,next)=>{try{res.json(await service.session(identity(req).accountId));}catch(e){next(e);}});
  router.post('/quote',async(req,res,next)=>{try{const id=identity(req);const parsed=actionSchema.safeParse({...req.body,type:'trade'});assert(parsed.success&&parsed.data.type==='trade','Invalid quote request.');const a=parsed.data as Extract<GameAction,{type:'trade'}>;res.json(await service.quote(id.accountId,a.merchant,a.resource,a.quantity,a.side));}catch(e){next(e);}});
- router.post('/action',async(req,res,next)=>{try{const id=identity(req);const parsed=actionSchema.safeParse(req.body);assert(parsed.success,'Invalid mainnet action.');const requestId=req.get('x-request-id');assert(requestId&&/^[a-zA-Z0-9_-]{8,100}$/.test(requestId),'A unique request identifier is required.');res.json(await service.action(id.accountId,parsed.data!,requestId!));}catch(e){next(e);}});
+ router.post('/action',async(req,res,next)=>{try{const id=identity(req);const parsed=actionSchema.safeParse(req.body);assert(parsed.success,'Invalid chain action.');const requestId=req.get('x-request-id');assert(requestId&&/^[a-zA-Z0-9_-]{8,100}$/.test(requestId),'A unique request identifier is required.');res.json(await service.action(id.accountId,parsed.data!,requestId!));}catch(e){next(e);}});
  router.post('/retry',async(req,res,next)=>{try{res.json(await service.retry(identity(req).accountId));}catch(e){next(e);}});
  return router;
 }

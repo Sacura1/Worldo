@@ -1,9 +1,10 @@
 import {Router, type Request} from 'express';
-import {randomBytes, randomUUID, timingSafeEqual} from 'node:crypto';
+import {randomBytes, randomUUID, timingSafeEqual, createHash} from 'node:crypto';
 import {createRemoteJWKSet, jwtVerify} from 'jose';
 import bs58 from 'bs58';
+import {PublicKey} from '@near-js/crypto';
 import {z} from 'zod';
-import {nearAuthConfiguration,nearAuthDerivationPath} from './near-config';
+import {nearAuthConfiguration,nearAuthDerivationPath,nearNetworkConfiguration,transactionExplorerUrl,testnetWalletEnabled,assertNearRpcNetwork} from './near-config';
 import {actionCost,checkReviewedFee,prepareGameTransaction,assertSponsoredDelegate} from './transaction-policy';
 import {localRelayerConfigured,relayAuthorizedSignature,submitSponsoredDelegate,submitUserTransaction,provisionNearWallet} from './relayer';
 
@@ -11,8 +12,9 @@ const issuerKeys=new Map<string,ReturnType<typeof createRemoteJWKSet>>();
 function authKeys(issuer:string){let keys=issuerKeys.get(issuer);if(!keys){keys=createRemoteJWKSet(new URL('.well-known/jwks.json',issuer));issuerKeys.set(issuer,keys);}return keys;}
 function verifyAuthToken(token:string){const config=nearAuthConfiguration();return jwtVerify(token,authKeys(config.issuer),{issuer:config.issuer,audience:config.audience,algorithms:['RS256'],maxTokenAge:'5m'});}
 type Challenge={message:string;recipient:string;nonce:number[];expiresAt:number};
-export type NearIdentity={accountId:string;publicKey:string;expiresAt:number;authSubject:string};
+export type NearIdentity={accountId:string;publicKey:string;expiresAt:number;authSubject:string;authMethod?:'near-auth'|'testnet-wallet'};
 const challenges=new Map<string,Challenge>();
+const testnetChallenges=new Map<string,Challenge>();
 const identities=new Map<string,NearIdentity>();
 type PendingAction=ReturnType<typeof prepareGameTransaction>&{session:string;ownerAccountId:string;expiresAt:number;method:string;deposit:string;reviewedFeeCeiling?:string};
 const pendingActions=new Map<string,PendingAction>();
@@ -40,15 +42,15 @@ export function validateContractAction(method:unknown,args:unknown,deposit:unkno
 export function sessionId(req:Request):string {const id=(req as Request & {sessionId?:string}).sessionId;if(!id)throw new Error('Start a game session first.');return id;}
 export function getVerifiedIdentity(req:Request):NearIdentity|null {const id=identities.get(sessionId(req));if(!id||id.expiresAt<Date.now())return null;return id;}
 export function nearConfiguration(){
- const auth=nearAuthConfiguration();
- const authConfigured=Boolean(auth.clientId);
+ const auth=nearAuthConfiguration(),chain=nearNetworkConfiguration();
+ const authConfigured=testnetWalletEnabled()||Boolean(auth.clientId);
  const contractId=process.env.NEAR_CONTRACT_ID||null;
- const liveEnabled=authConfigured&&Boolean(contractId)&&process.env.ENABLE_MAINNET==='true';
- const liveGameplayEnabled=liveEnabled&&Boolean(process.env.NEAR_ORACLE_ACCOUNT_ID&&process.env.NEAR_ORACLE_PRIVATE_KEY&&process.env.DATABASE_URL&&process.env.NEAR_REFINERY_ACCOUNT&&process.env.NEAR_FOUNDRY_ACCOUNT&&process.env.NEAR_SAWMILL_ACCOUNT&&process.env.NEAR_DEPOT_ACCOUNT)&&(localRelayerConfigured()||Boolean(process.env.NEAR_AUTH_RELAYER_URL));
- return {network:'mainnet' as const,authConfigured,clientId:auth.clientId,authDomain:auth.domain,authAudience:auth.audience,authGuardId:auth.guardId,appOrigin:auth.appOrigin,contractConfigured:Boolean(contractId),contractId,liveEnabled,liveGameplayEnabled,walletSetupEnabled:localRelayerConfigured(),relayerConfigured:localRelayerConfigured()||Boolean(process.env.NEAR_AUTH_RELAYER_URL),message:liveEnabled?'Mainnet funding available.':!authConfigured?'Mainnet social sign-in awaits approved NEAR Auth credentials.':'Mainnet gameplay has not been enabled.'};
+ const liveEnabled=authConfigured&&Boolean(contractId)&&chain.chainEnabled;
+ const liveGameplayEnabled=liveEnabled&&Boolean(process.env.NEAR_ORACLE_ACCOUNT_ID&&process.env.NEAR_ORACLE_PRIVATE_KEY&&(process.env.DATABASE_URL||chain.testnet)&&process.env.NEAR_REFINERY_ACCOUNT&&process.env.NEAR_FOUNDRY_ACCOUNT&&process.env.NEAR_SAWMILL_ACCOUNT&&process.env.NEAR_DEPOT_ACCOUNT)&&(localRelayerConfigured()||Boolean(process.env.NEAR_AUTH_RELAYER_URL));
+ return {...chain,testnetWalletEnabled:testnetWalletEnabled(),authConfigured,clientId:auth.clientId,authDomain:auth.domain,authAudience:auth.audience,authGuardId:auth.guardId,appOrigin:auth.appOrigin,contractConfigured:Boolean(contractId),contractId,liveEnabled,liveGameplayEnabled,walletSetupEnabled:localRelayerConfigured(),relayerConfigured:localRelayerConfigured()||Boolean(process.env.NEAR_AUTH_RELAYER_URL),message:liveEnabled?(chain.testnet?'NEAR testnet ready. Test tokens have no monetary value; Intents is mainnet-only.':'Mainnet funding available.'):!authConfigured?'Social sign-in awaits approved NEAR Auth credentials.':'Chain gameplay needs a deployed contract, operator configuration and explicit enablement.'};
 }
 export async function nearRpc<T>(params:Record<string,unknown>,method='query'):Promise<T>{
- const response=await fetch(process.env.NEAR_RPC_URL||'https://rpc.mainnet.near.org',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:'lowland',method,params}),signal:AbortSignal.timeout(method==='query'?15000:60000)});
+ const response=await fetch(nearNetworkConfiguration().rpcUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:'lowland',method,params}),signal:AbortSignal.timeout(method==='query'?15000:60000)});
  if(!response.ok)throw new Error('NEAR is temporarily unavailable.');
  const body=await response.json() as {result?:T;error?:unknown};
  if(body.error||body.result===undefined)throw new Error('Unable to read the NEAR account.');
@@ -80,9 +82,28 @@ export function executionSucceeded(outcome:Record<string,unknown>):boolean{
 export function createNearRouter(){
  const router=Router();
  router.get('/status',(_req,res)=>res.json(nearConfiguration()));
- router.get('/identity',(req,res)=>{const i=getVerifiedIdentity(req);res.json({identity:i?{accountId:i.accountId,publicKey:i.publicKey,expiresAt:i.expiresAt}:null});});
+ router.get('/network-status',async(_req,res)=>{try{res.json(await assertNearRpcNetwork());}catch(error){res.status(503).json({error:error instanceof Error?error.message:'RPC network verification failed.'});}});
+ router.get('/identity',(req,res)=>{const i=getVerifiedIdentity(req);res.json({identity:i?{accountId:i.accountId,publicKey:i.publicKey,expiresAt:i.expiresAt,authMethod:i.authMethod||'near-auth',network:nearNetworkConfiguration().network}:null});});
+ router.post('/testnet-challenge',(req,res)=>{
+  if(!testnetWalletEnabled()){res.status(403).json({error:'Local test wallets are disabled on this network.'});return;}
+  for(const [key,value]of testnetChallenges)if(value.expiresAt<Date.now())testnetChallenges.delete(key);
+  if(testnetChallenges.size>=10000){res.status(429).json({error:'Try again shortly.'});return;}
+  const challenge:Challenge={message:'Sign in to Worldo on NEAR testnet. Test tokens have no monetary value. This does not authorize a payment.',recipient:new URL(nearAuthConfiguration().appOrigin).host,nonce:[...randomBytes(32)],expiresAt:Date.now()+300000};
+  testnetChallenges.set(sessionId(req),challenge);res.json({payload:[...encodeChallenge(challenge)],network:'testnet'});
+ });
+ router.post('/verify-testnet',(req,res)=>{
+  const sid=sessionId(req),challenge=testnetChallenges.get(sid);testnetChallenges.delete(sid);
+  if(!testnetWalletEnabled()||!challenge||challenge.expiresAt<Date.now()){res.status(403).json({error:'Start a fresh testnet sign-in.'});return;}
+  try{
+   const key=PublicKey.fromString(req.body?.publicKey);if(key.keyType!==0||key.data.length!==32)throw new Error('Invalid key.');
+   const signature=req.body?.signature;if(!Array.isArray(signature)||signature.length!==64||signature.some(n=>!Number.isInteger(n)||n<0||n>255))throw new Error('Invalid signature.');
+   if(!key.verify(createHash('sha256').update(encodeChallenge(challenge)).digest(),Uint8Array.from(signature)))throw new Error('Invalid proof.');
+   const identity:NearIdentity={accountId:Buffer.from(key.data).toString('hex'),publicKey:key.toString(),expiresAt:Date.now()+3600000,authSubject:'testnet-wallet:'+key.toString(),authMethod:'testnet-wallet'};
+   identities.set(sid,identity);res.json({identity:{accountId:identity.accountId,publicKey:identity.publicKey,expiresAt:identity.expiresAt,authMethod:'testnet-wallet',network:'testnet'}});
+  }catch{res.status(401).json({error:'The browser did not prove ownership of this testnet wallet.'});}
+ });
  router.post('/challenge',(req,res)=>{
-  if(!nearConfiguration().authConfigured){res.status(503).json({error:'NEAR Auth mainnet credentials are not configured.'});return;}
+  if(!nearConfiguration().authConfigured){res.status(503).json({error:'NEAR Auth credentials are not configured.'});return;}
   for(const [key,value]of challenges)if(value.expiresAt<Date.now())challenges.delete(key);
   if(challenges.size>10000){res.status(429).json({error:'Try signing in again shortly.'});return;}
   const challenge:Challenge={message:'Sign in to Lowland. This does not authorize a payment.',recipient:new URL(nearAuthConfiguration().appOrigin).host,nonce:[...randomBytes(32)],expiresAt:Date.now()+5*60_000};
@@ -97,39 +118,40 @@ export function createNearRouter(){
   try{
    const {payload}=await verifyAuthToken(req.body.token);
    if(!payload.sub||payload.azp!==nearAuthConfiguration().clientId||!validateChallengePayload(payload.fatxn,challenge))throw new Error('Invalid authentication binding.');
-   const publicKey=await viewContract<string>('v1.signer','derived_public_key',{path:nearAuthDerivationPath(payload.sub),predecessor:'fast-auth.near',domain_id:1});
+   const publicKey=await viewContract<string>(nearNetworkConfiguration().mpcContract,'derived_public_key',{path:nearAuthDerivationPath(payload.sub),predecessor:nearNetworkConfiguration().authContract,domain_id:1});
    if(typeof publicKey!=='string'||!publicKey.startsWith('ed25519:'))throw new Error('Unsupported derived key.');
    const bytes=bs58.decode(publicKey.slice(8));if(bytes.length!==32)throw new Error('Invalid derived key.');
-   const identity:NearIdentity={authSubject:payload.sub,accountId:Buffer.from(bytes).toString('hex'),publicKey,expiresAt:Date.now()+60*60_000};
+   const identity:NearIdentity={authSubject:payload.sub,authMethod:'near-auth',accountId:Buffer.from(bytes).toString('hex'),publicKey,expiresAt:Date.now()+60*60_000};
    identities.set(sid,identity);res.json({identity:{accountId:identity.accountId,publicKey,expiresAt:identity.expiresAt}});
   }catch{res.status(401).json({error:'Could not verify your NEAR sign-in. Please try again.'});}
  });
- router.post('/logout',(req,res)=>{identities.delete(sessionId(req));challenges.delete(sessionId(req));res.json({ok:true});});
+ router.post('/logout',(req,res)=>{identities.delete(sessionId(req));challenges.delete(sessionId(req));testnetChallenges.delete(sessionId(req));res.json({ok:true});});
  router.get('/balance',async(req,res)=>{
   const identity=getVerifiedIdentity(req);if(!identity){res.status(401).json({error:'Sign in first.'});return;}
-  try{const [account,wrappedAmount,storage]=await Promise.all([nearRpc<{amount:string}>({request_type:'view_account',finality:'final',account_id:identity.accountId}),viewContract<string>('wrap.near','ft_balance_of',{account_id:identity.accountId}),viewContract<unknown>('wrap.near','storage_balance_of',{account_id:identity.accountId})]);res.json({accountId:identity.accountId,amount:account.amount,wrappedAmount,decimals:24,walletReady:Boolean(storage),network:'mainnet'});}
+  try{const [account,wrappedAmount,storage]=await Promise.all([nearRpc<{amount:string}>({request_type:'view_account',finality:'final',account_id:identity.accountId}),viewContract<string>(nearNetworkConfiguration().wrappedToken,'ft_balance_of',{account_id:identity.accountId}),viewContract<unknown>(nearNetworkConfiguration().wrappedToken,'storage_balance_of',{account_id:identity.accountId})]);res.json({accountId:identity.accountId,amount:account.amount,wrappedAmount,decimals:24,walletReady:Boolean(storage),network:nearNetworkConfiguration().network});}
   catch{res.status(503).json({error:'The account balance is not available yet.'});}
  });
  router.post('/prepare-wallet',async(req,res)=>{
-  const identity=getVerifiedIdentity(req);if(!identity||!nearConfiguration().liveEnabled){res.status(403).json({error:'Sign in to an enabled mainnet deployment first.'});return;}
+  const identity=getVerifiedIdentity(req);if(!identity||!nearConfiguration().liveEnabled){res.status(403).json({error:'Sign in to an enabled NEAR deployment first.'});return;}
   try{res.json(await provisionNearWallet(identity.accountId));}catch(error){res.status(503).json({error:error instanceof Error?error.message:'Wallet preparation is unavailable.'});}
  });
  router.get('/account',async(req,res)=>{
   const identity=getVerifiedIdentity(req),config=nearConfiguration();
-  if(!identity||!config.contractId){res.status(403).json({error:'Sign in to an enabled mainnet deployment first.'});return;}
-  try{res.json({account:await viewContract(config.contractId,'account',{account_id:identity.accountId}),paused:await viewContract(config.contractId,'is_paused',{}),network:'mainnet'});}
+  if(!identity||!config.contractId){res.status(403).json({error:'Sign in to an enabled NEAR deployment first.'});return;}
+  try{res.json({account:await viewContract(config.contractId,'account',{account_id:identity.accountId}),paused:await viewContract(config.contractId,'is_paused',{}),network:nearNetworkConfiguration().network});}
   catch{res.status(503).json({error:'The game contract could not be read.'});}
  });
  router.post('/action-cost',async(req,res)=>{
   const identity=getVerifiedIdentity(req);
-  if(!identity||!nearConfiguration().liveEnabled){res.status(403).json({error:'Sign in to an enabled mainnet deployment first.'});return;}
-  try{const action=validateContractAction(req.body?.method,req.body?.args,req.body?.deposit);const price=await nearRpc<{gas_price:string}>({block_id:null},'gas_price');res.json({...actionCost(action.method,action.deposit,price.gas_price),accountId:identity.accountId});}
+  if(!identity||!nearConfiguration().liveEnabled){res.status(403).json({error:'Sign in to an enabled NEAR deployment first.'});return;}
+  try{const action=validateContractAction(req.body?.method,req.body?.args,req.body?.deposit);const price=await nearRpc<{gas_price:string}>({block_id:null},'gas_price');res.json({...actionCost(action.method,action.deposit,price.gas_price),accountId:identity.accountId,network:nearNetworkConfiguration().network,signingMode:identity.authMethod||'near-auth'});}
   catch(error){res.status(422).json({error:error instanceof Error?error.message:'Network costs are unavailable.'});}
  });
  router.post('/prepare-action',async(req,res)=>{
   const identity=getVerifiedIdentity(req),config=nearConfiguration();
-  if(!identity||!config.liveEnabled||!config.contractId||!config.relayerConfigured){res.status(403).json({error:'Mainnet game transactions are not enabled.'});return;}
+  if(!identity||!config.liveEnabled||!config.contractId||!config.relayerConfigured){res.status(403).json({error:'NEAR game transactions are not enabled.'});return;}
   try{
+   await assertNearRpcNetwork();
    const action=validateContractAction(req.body?.method,req.body?.args,req.body?.deposit);
    if(req.body?.approvedCost?.accountId!==identity.accountId)throw new Error('The signed-in account changed. Review this action again.');
    if(action.method==='deposit'&&'account_id'in action.args&&action.args.account_id&&action.args.account_id!==identity.accountId)throw new Error('This flow funds only your own game account.');
@@ -141,7 +163,7 @@ export function createNearRouter(){
    for(const [key,pending]of pendingActions)if(pending.expiresAt<Date.now())pendingActions.delete(key);
    if(pendingActions.size>10000)throw new Error('Transaction queue is busy.');
    const id=randomUUID();pendingActions.set(id,{...prepared,session:sessionId(req),ownerAccountId:identity.accountId,method:action.method,deposit:action.deposit,reviewedFeeCeiling,expiresAt:Date.now()+5*60_000});
-   res.json({id,payload:[...prepared.bytes],signerId:identity.accountId,publicKey:identity.publicKey,receiverId:prepared.receiverId,nonce:prepared.nonce,...action,...cost});
+   res.json({id,payload:[...prepared.bytes],signerId:identity.accountId,publicKey:identity.publicKey,receiverId:prepared.receiverId,nonce:prepared.nonce,...action,...cost,network:nearNetworkConfiguration().network,signingMode:identity.authMethod||'near-auth'});
   }catch(error){res.status(422).json({error:error instanceof z.ZodError?'Invalid game transaction.':error instanceof Error?error.message:'Unable to prepare transaction.'});}
  });
  router.post('/relay',async(req,res)=>{
@@ -149,10 +171,19 @@ export function createNearRouter(){
   if(!identity||!nearConfiguration().liveEnabled||!nearConfiguration().relayerConfigured||!pending||pending.session!==sessionId(req)||pending.ownerAccountId!==identity.accountId||pending.expiresAt<Date.now()){res.status(403).json({error:'Transaction authorization expired or is unavailable.'});return;}
   pendingActions.delete(id);
   try{
-   if(typeof req.body.token!=='string'||req.body.token.length>30000)throw new Error('Invalid authorization.');
-   const {payload}=await verifyAuthToken(req.body.token);
-   if(payload.sub!==identity.authSubject||payload.azp!==nearAuthConfiguration().clientId||!Array.isArray(payload.fatxn)||payload.fatxn.some(n=>!Number.isInteger(n)||n<0||n>255))throw new Error('Invalid authorization.');
-   const bytes=Buffer.from(payload.fatxn);if(bytes.length!==pending.bytes.length||!timingSafeEqual(bytes,pending.bytes))throw new Error('Transaction does not match the approved action.');
+   await assertNearRpcNetwork();
+   let bytes:Buffer,localSignature:string|undefined;
+   if(identity.authMethod==='testnet-wallet'){
+    if(!testnetWalletEnabled()||nearNetworkConfiguration().network!=='testnet')throw new Error('Testnet wallet cannot sign on mainnet.');
+    const signature=req.body?.signature;if(!Array.isArray(signature)||signature.length!==64||signature.some(n=>!Number.isInteger(n)||n<0||n>255))throw new Error('Invalid signature.');
+    bytes=pending.bytes;if(!PublicKey.fromString(identity.publicKey).verify(createHash('sha256').update(bytes).digest(),Uint8Array.from(signature)))throw new Error('The signature does not match the reviewed transaction.');
+    localSignature=Buffer.from(JSON.stringify({signature})).toString('base64');
+   }else{
+    if(typeof req.body.token!=='string'||req.body.token.length>30000)throw new Error('Invalid authorization.');
+    const {payload}=await verifyAuthToken(req.body.token);
+    if(payload.sub!==identity.authSubject||payload.azp!==nearAuthConfiguration().clientId||!Array.isArray(payload.fatxn)||payload.fatxn.some(n=>!Number.isInteger(n)||n<0||n>255))throw new Error('Invalid authorization.');
+    bytes=Buffer.from(payload.fatxn);if(bytes.length!==pending.bytes.length||!timingSafeEqual(bytes,pending.bytes))throw new Error('Transaction does not match the approved action.');
+   }
    let outcome:Record<string,unknown>;
    const ensureReviewedFee=async()=>{
     if(pending.kind!=='transaction')return;
@@ -161,7 +192,9 @@ export function createNearRouter(){
    };
    await ensureReviewedFee();
    if(pending.kind==='delegateAction')assertSponsoredDelegate(pending.delegate);
-   if(localRelayerConfigured()){
+   if(localSignature){
+    await ensureReviewedFee();outcome=pending.kind==='transaction'?await submitUserTransaction(pending.transaction,localSignature):await submitSponsoredDelegate(pending.delegate,localSignature);
+   }else if(localRelayerConfigured()){
     const signature=await relayAuthorizedSignature(req.body.token,[...bytes]);
     await ensureReviewedFee();
     outcome=pending.kind==='transaction'?await submitUserTransaction(pending.transaction,signature):await submitSponsoredDelegate(pending.delegate,signature);
@@ -183,8 +216,8 @@ export function createNearRouter(){
    if(!hash)throw new Error('Transaction confirmation is unavailable. Check your account before trying again.');
    const sender=(outcome.transaction as {signer_id?:string}).signer_id;
    if(sender)outcome=await nearRpc({tx_hash:hash,sender_account_id:sender,wait_until:'FINAL'},'tx');
-   if(!executionSucceeded(outcome)){res.status(422).json({error:`The game transaction failed. Receipt: https://nearblocks.io/txns/${hash}`,hash,explorerUrl:`https://nearblocks.io/txns/${hash}`});return;}
-   res.json({hash,explorerUrl:`https://nearblocks.io/txns/${hash}`,outcome,gasSponsored:pending.kind==='delegateAction',attachedDepositPayer:pending.kind==='delegateAction'?'sponsor':'player'});
+   if(!executionSucceeded(outcome)){res.status(422).json({error:`The game transaction failed. Receipt: ${transactionExplorerUrl(hash)}`,hash,explorerUrl:transactionExplorerUrl(hash)});return;}
+   res.json({hash,explorerUrl:transactionExplorerUrl(hash),outcome,gasSponsored:pending.kind==='delegateAction',attachedDepositPayer:pending.kind==='delegateAction'?'sponsor':'player'});
   }catch{res.status(422).json({error:'The transaction could not be confirmed. Check your account before trying again.'});}
  });
  return router;

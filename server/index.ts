@@ -10,6 +10,7 @@ import {createNearRouter} from './near';
 import {canonicalAppOrigin} from './near-config';
 import {createIntentsRouter} from './intents';
 import {createLiveRouter} from './live';
+import {createNpcRouter} from './npc';
 
 declare global {namespace Express {interface Request {sessionId?:string;}}}
 export {actionSchema} from './action-schema';
@@ -60,6 +61,7 @@ export async function createApp(store=new GameStore(),options:{frontend?:boolean
  app.use('/api/near',createNearRouter());
  app.use('/api/intents',createIntentsRouter());
  app.use('/api/live',createLiveRouter(store));
+ app.use('/api/npc',createNpcRouter(store));
  app.use('/api',(_req,res)=>res.status(404).json({error:'Endpoint not found.'}));
  if(options.frontend!==false){
   if(production){app.use(express.static(path.resolve('dist'),{maxAge:'1h',index:false}));app.get('/{*splat}',(_req,res)=>res.sendFile(path.resolve('dist/index.html')));}

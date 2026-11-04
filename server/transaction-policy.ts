@@ -1,3 +1,4 @@
+import {nearNetworkConfiguration} from './near-config';
 import {actionCreators,buildDelegateAction,createTransaction,encodeDelegateAction,encodeTransaction,type DelegateAction} from '@near-js/transactions';
 import {PublicKey} from '@near-js/crypto';
 import bs58 from 'bs58';
@@ -22,7 +23,7 @@ export function checkReviewedFee(review:unknown,current:ReturnType<typeof action
 }
 export function prepareGameTransaction(input:{accountId:string;publicKey:string;contractId:string;method:string;args:unknown;deposit:string;access:{nonce:number;block_height:number;block_hash:string}}){
  const {accountId,publicKey,contractId,method,args,deposit,access}=input;
- const receiverId=method==='unwrap'?'wrap.near':contractId,callMethod=method==='unwrap'?'near_withdraw':method;
+ const receiverId=method==='unwrap'?nearNetworkConfiguration().wrappedToken:contractId,callMethod=method==='unwrap'?'near_withdraw':method;
  const key=PublicKey.fromString(publicKey),nonce=BigInt(access.nonce)+1n;
  const actions=[actionCreators.functionCall(callMethod,Buffer.from(JSON.stringify(args)),ACTION_GAS,BigInt(deposit))];
  if(transactionKind(method,deposit)==='transaction'){
@@ -39,6 +40,6 @@ export function assertSponsoredDelegate(delegate:DelegateAction,contractId=proce
  const action=delegate.actions[0],call=action?.functionCall;
  if(delegate.actions.length!==1||action?.enum!=='functionCall'||!call||call.deposit!==1n||call.gas>ACTION_GAS)throw new Error('Only a single one-yocto game call can be sponsored.');
  const gameMethods=['withdraw','trade','process','build_refinery','refine_owned'];
- if(!(delegate.receiverId===contractId&&gameMethods.includes(call.methodName))&&!(delegate.receiverId==='wrap.near'&&call.methodName==='near_withdraw'))throw new Error('This method cannot use sponsored attached funds.');
+ if(!(delegate.receiverId===contractId&&gameMethods.includes(call.methodName))&&!(delegate.receiverId===nearNetworkConfiguration().wrappedToken&&call.methodName==='near_withdraw'))throw new Error('This method cannot use sponsored attached funds.');
  return 1n;
 }

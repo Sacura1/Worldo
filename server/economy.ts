@@ -1,16 +1,18 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {PLACES,RESOURCE_NAMES,START_POSITION,TRUCK_POSITION,emptyInventory,type GameState,type GameAction,type PlaceId,type Resource,type Vec2} from '../shared/types';
 import {BUILD_COST,RECIPES,SCANNER_COST,cargoUsed,capacity,quoteTrade,roundMoney} from '../shared/economy-rules';
-import {findVehicleExit} from '../shared/world-layout';
+import {bodyCollides,clearLineOfSight,findSafeVehicleExit,motionIsClear,parkedVehicleCollider} from '../shared/world-physics';
+import {getWorldColliders,SERVICE_NPCS,TOWN_DOORS} from '../shared/town';
 
 export {quoteTrade} from '../shared/economy-rules';
 export interface OracleCommand {nonce:number;kind:'harvest'|'fuel';resource:'crude'|'ore'|'timber';amount:number;createdAt:number;attempts:number;lastAttemptAt:number;after:GameState;lastGatherAt:number;requestId:string;receipt?:{hash:string;explorerUrl:string};}
-export interface GameMeta {lastMoveAt:number;lastGatherAt:number;lastSurveyAt:number;lastAdvanceAt:number;moveCredit:number;requests:{id:string;at:number}[];pendingOracle?:OracleCommand;confirmedOracleNonce?:number;oracleReceipts?:Record<string,{nonce:number;at:number;hash?:string;kind?:'harvest'|'fuel';amount?:number}>;liveDay?:number;oilDeposit?:Vec2;}
+export interface GameMeta {lastMoveAt:number;lastGatherAt:number;lastSurveyAt:number;lastAdvanceAt:number;moveCredit:number;requests:{id:string;at:number}[];pendingOracle?:OracleCommand;confirmedOracleNonce?:number;oracleReceipts?:Record<string,{nonce:number;at:number;hash?:string;kind?:'harvest'|'fuel';amount?:number}>;liveDay?:number;oilDeposit?:Vec2;navigationVersion?:number;}
 export interface SavedGame {state:GameState;meta:GameMeta;}
 export class GameError extends Error {constructor(message:string,public status=400){super(message);}}
+export const NAVIGATION_VERSION=2;
 const distance=(a:Vec2,b:Vec2)=>Math.hypot(a.x-b.x,a.z-b.z);
 const expect=(condition:unknown,message:string)=>{if(!condition)throw new GameError(message);};
-const near=(state:GameState,id:PlaceId,radius=10)=>distance(state.player.position,PLACES.find(p=>p.id===id)!.position)<=radius;
+const near=(state:GameState,id:PlaceId,radius=10)=>distance(state.player.position,PLACES.find(p=>p.id===id)!.position)<=radius||SERVICE_NPCS.some(npc=>npc.place===id&&distance(state.player.position,npc.position)<=3.5);
 const requireNear=(state:GameState,id:PlaceId)=>expect(near(state,id),`Move closer to ${PLACES.find(p=>p.id===id)!.name}.`);
 const integer=(n:number)=>Number.isInteger(n)&&n>0&&n<=40;
 function log(state:GameState,text:string,at:number){state.activities.unshift({id:randomUUID(),text,at});state.activities=state.activities.slice(0,30);}
@@ -27,14 +29,35 @@ function prospectHint(from:Vec2,to:Vec2):string {
  return `Move ${directions[(Math.round(angle/(Math.PI/4))+8)%8]} and scan again.`;
 }
 
+/** Existing worlds keep their economy; only bodies overlapping new scenery move. */
+export function migrateNavigation(saved:SavedGame,now=Date.now()):SavedGame{
+ if((saved.meta.navigationVersion??0)>=NAVIGATION_VERSION)return saved;
+ const next=structuredClone(saved);
+ const migrateWorld=(state:GameState)=>{
+  state.doors??={};let colliders=getWorldColliders(Object.keys(state.doors).filter(id=>state.doors![id]));
+  const clearPosition=(position:Vec2,heading:number,driving:boolean,fallback:Vec2):Vec2=>{
+   if(!bodyCollides(position,heading,driving,colliders))return{...position};
+   for(let radius=.5;radius<=12;radius+=.5){const count=Math.max(12,Math.ceil(radius*12));for(let i=0;i<count;i++){const angle=i/count*Math.PI*2,candidate={x:position.x+Math.cos(angle)*radius,z:position.z+Math.sin(angle)*radius};if(!bodyCollides(candidate,heading,driving,colliders))return candidate;}}
+   return{...fallback};
+  };
+  const heading=Number.isFinite(state.truckHeading)?state.truckHeading!:state.player.driving?state.player.heading:-Math.PI/2;
+  state.truckHeading=heading;state.truckPosition=clearPosition(state.player.driving?state.player.position:state.truckPosition??TRUCK_POSITION,heading,true,TRUCK_POSITION);
+  if(!state.player.driving)colliders=[...colliders,parkedVehicleCollider(state.truckPosition,heading)];
+  state.player.position=state.player.driving?{...state.truckPosition}:clearPosition(state.player.position,state.player.heading,false,START_POSITION);if(state.player.driving)state.player.heading=heading;
+ };
+ migrateWorld(next.state);if(next.meta.pendingOracle)migrateWorld(next.meta.pendingOracle.after);
+ next.meta.navigationVersion=NAVIGATION_VERSION;next.meta.lastMoveAt=now;next.meta.moveCredit=2;next.state.revision++;
+ return next;
+}
+
 export function newGame(id:string=randomUUID(),now=Date.now()):SavedGame {
- const state:GameState={mode:'demo',day:1,revision:0,player:{id,name:'New arrival',position:{...START_POSITION},heading:0,driving:false,fuel:70,energy:100,scanner:false,balance:120,inventory:emptyInventory(),facility:false,discovered:false,xp:0},truckPosition:{...TRUCK_POSITION},truckHeading:0,deposits:{crude:80,ore:100,timber:100},production:{fuelConsumed:0,materialsUsed:0},merchants:[
+ const state:GameState={mode:'demo',day:1,revision:0,player:{id,name:'New arrival',position:{...START_POSITION},heading:0,driving:false,fuel:70,energy:100,scanner:false,balance:120,inventory:emptyInventory(),facility:false,discovered:false,xp:0},truckPosition:{...TRUCK_POSITION},truckHeading:-Math.PI/2,doors:{},deposits:{crude:80,ore:100,timber:100},production:{fuelConsumed:0,materialsUsed:0},merchants:[
  {id:'depot',name:'Supply depot',budget:300,stock:{...emptyInventory(),petrol:12,steel:10,planks:12}},
  {id:'refinery',name:'Lowland Refinery',budget:180,stock:{...emptyInventory(),crude:8,petrol:16}},
  {id:'sawmill',name:'Pine & Co. Sawmill',budget:160,stock:{...emptyInventory(),timber:10,planks:16}},
  {id:'foundry',name:'Eastbank Foundry',budget:200,stock:{...emptyInventory(),ore:12,steel:14}}],activities:[]};
  log(state,'Welcome to Lowland. Your pickup is parked outside the supply depot.',now);
- return {state,meta:{lastMoveAt:now,lastGatherAt:0,lastSurveyAt:0,lastAdvanceAt:0,moveCredit:2,requests:[],oilDeposit:createOilDeposit(randomUUID())}};
+ return {state,meta:{lastMoveAt:now,lastGatherAt:0,lastSurveyAt:0,lastAdvanceAt:0,moveCredit:2,requests:[],oilDeposit:createOilDeposit(randomUUID()),navigationVersion:NAVIGATION_VERSION}};
 }
 
 export function applyAction(saved:SavedGame,action:GameAction,now=Date.now()):SavedGame {
@@ -44,6 +67,8 @@ export function applyAction(saved:SavedGame,action:GameAction,now=Date.now()):Sa
  if(!meta.oilDeposit)meta.oilDeposit=createOilDeposit(randomUUID());
  if(p.discovered&&!p.depositPosition)p.discovered=false;
  if(!Number.isFinite(s.truckHeading))s.truckHeading=p.driving?p.heading:0;
+ s.doors??={};
+ const worldColliders=getWorldColliders(Object.keys(s.doors).filter(id=>s.doors![id]));
  expect(s.mode==='demo','Live settlement is not enabled for this session.');
  switch(action.type){
  case 'move':{
@@ -55,6 +80,8 @@ export function applyAction(saved:SavedGame,action:GameAction,now=Date.now()):Sa
   const allowed=Math.min(speed*2+2,meta.moveCredit+elapsed*speed);
   const travel=distance(p.position,{x:action.x,z:action.z});
   expect(travel<=allowed+.1,'Movement was too fast. Your position has been restored.');
+  const movementColliders=p.driving?worldColliders:[...worldColliders,parkedVehicleCollider(s.truckPosition??TRUCK_POSITION,s.truckHeading??0)];
+  expect(motionIsClear(p.position,{x:action.x,z:action.z},p.heading,action.heading,p.driving,movementColliders),'There is an obstacle in the way. Your position has been restored.');
   // A received on-chain transfer may exceed the normal carry allowance. Limit
   // new gathering and purchases, but never trap someone away from a business.
   if(p.driving&&travel>.02){expect(p.fuel>0,'The tank is empty. Exit the pickup to fetch fuel.');p.fuel=Math.max(0,p.fuel-travel*.075);}
@@ -62,10 +89,18 @@ export function applyAction(saved:SavedGame,action:GameAction,now=Date.now()):Sa
   p.position={x:action.x,z:action.z};p.heading=action.heading;meta.moveCredit=Math.max(0,allowed-travel);meta.lastMoveAt=now;
   break;
  }
+ case 'toggleDoor':{
+  const door=TOWN_DOORS.find(door=>door.id===action.doorId);expect(door,'Unknown door.');expect(!p.driving,'Step out of your pickup to use the door.');expect(distance(p.position,door!.position)<=3,'Move closer to the door.');
+  const opening=!s.doors[action.doorId],nextDoors={...s.doors,[action.doorId]:opening};
+  const sweep=Array.from({length:19},(_,index)=>{const angle=index/18*Math.PI/2;return{x:door!.hinge.x+Math.cos(angle)*door!.width/2,z:door!.hinge.z-Math.sin(angle)*door!.width/2,w:door!.width,d:.18,rotation:angle};});
+  expect(!bodyCollides(p.position,p.heading,false,sweep,Infinity),'Step away from the doorway before moving the door.');
+  expect(!bodyCollides(s.truckPosition??TRUCK_POSITION,s.truckHeading??0,true,sweep,Infinity),'Your pickup is blocking the door.');
+  s.doors=nextDoors;log(s,`${opening?'Opened':'Closed'} ${door!.label}.`,now);break;
+ }
  case 'enterVehicle':
-  expect(!p.driving,'You are already driving.');expect(distance(p.position,s.truckPosition??TRUCK_POSITION)<=6,'Move closer to your pickup.');p.driving=true;p.position={...(s.truckPosition??TRUCK_POSITION)};p.heading=s.truckHeading??0;meta.lastMoveAt=now;meta.moveCredit=2;log(s,'Got into your pickup.',now);break;
+  expect(!p.driving,'You are already driving.');expect(distance(p.position,s.truckPosition??TRUCK_POSITION)<=6,'Move closer to your pickup.');expect(clearLineOfSight(p.position,s.truckPosition??TRUCK_POSITION,worldColliders),'Walk around the obstacle to reach your pickup.');p.driving=true;p.position={...(s.truckPosition??TRUCK_POSITION)};p.heading=s.truckHeading??0;meta.lastMoveAt=now;meta.moveCredit=2;log(s,'Got into your pickup.',now);break;
  case 'exitVehicle':{
-  expect(p.driving,'You are already on foot.');const exit=findVehicleExit(p.position,p.heading);expect(exit,'There is no room to step out here. Move the pickup away from the building.');
+  expect(p.driving,'You are already on foot.');const exit=findSafeVehicleExit(p.position,p.heading,worldColliders);expect(exit,'There is no room to step out here. Move the pickup away from the building.');
   p.driving=false;s.truckPosition={...p.position};s.truckHeading=p.heading;p.position=exit!;meta.lastMoveAt=now;meta.moveCredit=2;log(s,'Parked your pickup.',now);break;
  }
  case 'scanner':

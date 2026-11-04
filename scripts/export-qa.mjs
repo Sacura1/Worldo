@@ -8,14 +8,17 @@ function visit(suites){for(const suite of suites||[]){for(const spec of suite.sp
 visit(report.suites);
 console.log(`WORLDO_QA_REPORT:${JSON.stringify({exitCode,stats:report.stats,errors:report.errors,tests})}`);
 const files=[];
-async function walk(folder){for(const entry of await readdir(folder,{withFileTypes:true}).catch(()=>[])){const file=path.join(folder,entry.name);if(entry.isDirectory())await walk(file);else if(entry.name.endsWith('.png'))files.push(file);}}
+async function walk(folder){for(const entry of await readdir(folder,{withFileTypes:true}).catch(()=>[])){const file=path.join(folder,entry.name);if(entry.isDirectory())await walk(file);else if(/\.(png|jpe?g)$/i.test(entry.name))files.push(file);}}
 await walk('test-results');
+// Compact tour images come first, so one large failure PNG cannot consume the
+// entire artifact allowance before the desktop and portrait views are emitted.
+files.sort((a,b)=>Number(/\.png$/i.test(a))-Number(/\.png$/i.test(b))||a.localeCompare(b));
 let emitted=0,encodedBytes=0;
 for(const file of files){
- const info=await stat(file);if(info.size>1024*1024||emitted>=4)continue;
- const base64=(await readFile(file)).toString('base64');if(encodedBytes+base64.length>1450000)continue;
+ const info=await stat(file);if(info.size>1024*1024||emitted>=10)continue;
+ const base64=(await readFile(file)).toString('base64');if(encodedBytes+base64.length>2*1024*1024)continue;
  const name=path.relative('test-results',file).replace(/[^a-zA-Z0-9_.-]/g,'_'),total=Math.ceil(base64.length/32768);
- console.log(`WORLDO_QA_ARTIFACT:${JSON.stringify({name,mimeType:'image/png',parts:total,bytes:info.size})}`);
+ console.log(`WORLDO_QA_ARTIFACT:${JSON.stringify({name,mimeType:/\.png$/i.test(file)?'image/png':'image/jpeg',parts:total,bytes:info.size})}`);
  for(let index=0;index<total;index++){
   console.log(`WORLDO_QA_ARTIFACT_PART:${JSON.stringify({name,index,total,data:base64.slice(index*32768,(index+1)*32768)})}`);
   await new Promise(resolve=>setTimeout(resolve,250));
