@@ -1,6 +1,7 @@
 // Local QA serves the production build without Vite's optimizer or watcher.
 // Production itself continues to require an explicitly configured HTTPS origin.
 process.env.NODE_ENV = 'test';
+process.env.APP_MODE = 'development';
 process.env.PUBLIC_URL = 'http://localhost:3000';
 process.env.APP_ORIGIN = 'http://localhost:3000';
 process.env.ENABLE_MAINNET = 'false';

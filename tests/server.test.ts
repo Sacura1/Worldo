@@ -1,4 +1,4 @@
-import {afterAll,beforeAll,describe,expect,it} from 'vitest';
+import {afterAll,beforeAll,describe,expect,it,vi} from 'vitest';
 import {createServer,type Server} from 'node:http';
 import {mkdtemp,rm} from 'node:fs/promises';
 import os from 'node:os';
@@ -15,5 +15,21 @@ describe('HTTP session and action boundary',()=>{
  it('validates actions and rejects balance injection',async()=>{const res=await fetch(`${base}/api/action`,{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({type:'advance',balance:100000})});expect(res.status).toBe(400);});
  it('does not repeat a mutation with the same idempotency key',async()=>{const headers={cookie,'content-type':'application/json','x-request-id':'advance-request-01'};const a=await fetch(`${base}/api/action`,{method:'POST',headers,body:JSON.stringify({type:'advance'})});expect(a.status).toBe(200);const first=await a.json();const b=await fetch(`${base}/api/action`,{method:'POST',headers,body:JSON.stringify({type:'advance'})});expect(b.status).toBe(200);const second=await b.json();expect(second.day).toBe(first.day);expect(second.revision).toBe(first.revision);});
  it('isolates new guest sessions',async()=>{const res=await fetch(`${base}/api/session`);const fresh=await res.json();expect(fresh.day).toBe(1);const original=await (await fetch(`${base}/api/session`,{headers:{cookie}})).json();expect(original.day).toBe(2);});
- it('exposes health and actual storage without secrets',async()=>{const res=await fetch(`${base}/api/health`);expect(await res.json()).toEqual({status:'ok',game:'worldo',economy:'practice',storage:'local'});});
+ it('exposes health and actual storage without secrets',async()=>{const res=await fetch(`${base}/api/health`);expect(await res.json()).toEqual({status:'ok',game:'worldo',productMode:'development',economy:'practice',storage:'local'});});
+ it('production closes anonymous practice endpoints and does not mint a practice player',async()=>{
+  vi.stubEnv('APP_MODE','production');vi.stubEnv('NEAR_NETWORK','mainnet');
+  try{
+   const productionStore=new GameStore(folder,'');const create=vi.spyOn(productionStore,'create');
+   const isolated=createServer(await createApp(productionStore,{frontend:false}));
+   await new Promise<void>(resolve=>isolated.listen(0,'127.0.0.1',resolve));
+   const address=`http://127.0.0.1:${(isolated.address() as {port:number}).port}`;
+   try{
+    for(const [endpoint,method]of [['session','GET'],['action','POST'],['reset','POST']]){
+     const response=await fetch(`${address}/api/${endpoint}`,{method});expect(response.status).toBe(404);
+    }
+    expect(create).not.toHaveBeenCalled();
+    expect(await(await fetch(`${address}/api/health`)).json()).toMatchObject({productMode:'production',economy:'mainnet',storage:'unconfigured'});
+   }finally{await new Promise<void>(resolve=>isolated.close(()=>resolve()));}
+  }finally{vi.unstubAllEnvs();}
+ });
 });

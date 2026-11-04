@@ -1,4 +1,5 @@
 import {nearNetworkConfiguration} from './near-config';
+import {assertAccountReady} from './production-readiness';
 import {Router} from 'express';
 import {randomUUID,createHash} from 'node:crypto';
 import {mkdir,readFile,writeFile,rename} from 'node:fs/promises';
@@ -67,6 +68,7 @@ export function createIntentsRouter(){
  router.get('/tokens',async(_req,res)=>{try{res.json({tokens:await supportedTokens(),destinationAsset:DESTINATION_ASSET});}catch{res.status(503).json({error:'Supported assets could not be loaded. Try again shortly.'});}});
  router.post('/quote',async(req,res)=>{
   const dry=req.body?.dry!==false,identity=getVerifiedIdentity(req);
+  if(!dry){try{await assertAccountReady();}catch{res.status(503).json({error:'Funding is unavailable until Worldo’s mainnet setup has been verified.'});return;}}
   if(!dry&&(!nearConfiguration().liveEnabled||!identity)){res.status(403).json({error:'Mainnet funding requires verified sign-in and an enabled deployment.'});return;}
   if(!dry&&process.env.NODE_ENV==='production'&&!process.env.DATABASE_URL){res.status(503).json({error:'Payment storage is not configured.'});return;}
   try{

@@ -66,7 +66,7 @@ export async function goTo(page:Page,x:number,z:number,tolerance=1,touch:CDPSess
    const waypoint=path[index],last=index===path.length-1,threshold=last?Math.min(tolerance*.65,.65,Math.max(.15,tolerance-distance(waypoint,target)-.15)):.45;
    let bestDistance=Infinity,lastProgressAt=Date.now();
    while(true){
-    const pose=await page.locator('[data-camera-yaw]').evaluate(element=>{const d=(element as HTMLElement).dataset;return{x:Number(d.playerX),z:Number(d.playerZ),yaw:Number(d.cameraYaw)};});
+    const pose=await page.locator('[data-camera-yaw]').evaluate(element=>{const d=(element as HTMLElement).dataset;return{x:Number(d.playerX),z:Number(d.playerZ),yaw:Number(d.inputYaw??d.cameraYaw)};});
     if(distance(pose,waypoint)<=threshold||(last&&distance(pose,target)<tolerance*.8))break;
     const remaining=distance(pose,waypoint);if(remaining<bestDistance-.15){bestDistance=remaining;lastProgressAt=Date.now();}
     if(Date.now()-lastProgressAt>15000)throw new Error(`Walking stalled for 15 seconds at ${pose.x.toFixed(2)},${pose.z.toFixed(2)}; waypoint ${waypoint.x},${waypoint.z}`);
@@ -74,9 +74,13 @@ export async function goTo(page:Page,x:number,z:number,tolerance=1,touch:CDPSess
     const dx=waypoint.x-pose.x,dz=waypoint.z-pose.z,length=Math.hypot(dx,dz),side=(dx*Math.cos(pose.yaw)-dz*Math.sin(pose.yaw))/length,forward=(-dx*Math.sin(pose.yaw)-dz*Math.cos(pose.yaw))/length;
     if(touch){await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{id:0,x:centre!.x+side*30,y:centre!.z-forward*30}]});}
     else{
-     const wanted=new Set<string>();if(forward>.25)wanted.add('w');if(forward<-.25)wanted.add('s');if(side>.25)wanted.add('d');if(side<-.25)wanted.add('a');
-     if(remaining>4)wanted.add('Shift');
-     for(const key of held)if(!wanted.has(key)){await page.keyboard.up(key);held.delete(key);}for(const key of wanted)if(!held.has(key)){await page.keyboard.down(key);held.add(key);}
+     const keysForYaw=(yaw:number)=>{const wanted=new Set<string>(),s=(dx*Math.cos(yaw)-dz*Math.sin(yaw))/length,f=(-dx*Math.sin(yaw)-dz*Math.cos(yaw))/length;if(f>.25)wanted.add('w');if(f<-.25)wanted.add('s');if(s>.25)wanted.add('d');if(s<-.25)wanted.add('a');if(remaining>4)wanted.add('Shift');return wanted;};
+     let wanted=keysForYaw(pose.yaw);const wasMoving=[...held].some(key=>key!=='Shift');
+     for(const key of held)if(!wanted.has(key)){await page.keyboard.up(key);held.delete(key);}
+     // A complete release starts a new gesture relative to the followed view.
+     // Re-read that view before pressing the next chord; held chords use inputYaw.
+     if(wasMoving&&![...held].some(key=>key!=='Shift'))wanted=keysForYaw(await page.locator('[data-camera-yaw]').evaluate(element=>Number((element as HTMLElement).dataset.cameraYaw)));
+     for(const key of wanted)if(!held.has(key)){await page.keyboard.down(key);held.add(key);}
     }
     await page.waitForTimeout(100);
    }

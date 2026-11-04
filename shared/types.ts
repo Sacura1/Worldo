@@ -11,7 +11,7 @@ export type GameAction = {type:'move';x:number;z:number;heading:number;driving:b
 export const RESOURCE_NAMES:Record<Resource,string>={crude:'Crude oil',ore:'Iron ore',timber:'Timber',petrol:'Petrol',steel:'Steel',planks:'Planks'};
 export const PLACES:{id:PlaceId;name:string;position:Vec2;kind:'business'|'resource'|'plot'}[]=[
  {id:'depot',name:'Supply depot',position:{x:0,z:12},kind:'business'},
- {id:'refinery',name:'Lowland Refinery',position:{x:45,z:-20},kind:'business'},
+ {id:'refinery',name:'Worldo Refinery',position:{x:45,z:-20},kind:'business'},
  {id:'sawmill',name:'Pine & Co. Sawmill',position:{x:-40,z:-18},kind:'business'},
  {id:'foundry',name:'Eastbank Foundry',position:{x:37,z:40},kind:'business'},
  {id:'oilfield',name:'North ridge',position:{x:25,z:-65},kind:'resource'},

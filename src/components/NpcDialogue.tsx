@@ -2,10 +2,11 @@ import {useEffect,useRef,useState} from 'react';
 import {ArrowRight,MessageCircle,Send,ShoppingBag,Volume2,VolumeX,LoaderCircle} from 'lucide-react';
 import type {GameState,PlaceId} from '../../shared/types';
 import {SERVICE_NPCS,type ServiceNpc} from '../../shared/town';
-import {request} from '../lib/api';
+import {NpcAudioPlayer,type NpcAudioState} from '../lib/npc-audio';
 
-type Line={role:'user'|'assistant';content:string};
-type Reply={text:string;suggestions?:string[];source:'near-ai'|'local'};
+type Line={role:'user'|'assistant';content:string;replyId?:string};
+type Reply={text:string;replyId:string;suggestions?:string[];source:'near-ai';voiceAvailable:boolean};
+type Readiness={chat:{ready:boolean;reason:string};voice:{ready:boolean;reason:string}};
 const introductions:Record<string,string>={
  morgan:'Morning! Morgan’s the name. Need supplies, a scanner, or a little help finding your feet?',
  hale:'Welcome to the refinery. Bring me crude, and we’ll put it to work. What are you hauling?',
@@ -43,37 +44,55 @@ export function NpcPortrait({npcId,className=''}:{npcId:string;className?:string
 }
 
 export function NpcDialogue({npc,state,onTrade}:{npc:ServiceNpc;state:GameState;onTrade:(place:PlaceId)=>void}){
- const [lines,setLines]=useState<Line[]>([{role:'assistant',content:introductions[npc.id]??`Hello, I’m ${npc.name}. What brings you here?`}]);
- const [message,setMessage]=useState(''),[pending,setPending]=useState(false),[error,setError]=useState(''),[source,setSource]=useState<'near-ai'|'local'>('local');
+ const [lines,setLines]=useState<Line[]>([{role:'assistant',content:introductions[npc.id]}]);
+ const [message,setMessage]=useState(''),[pending,setPending]=useState(false),[error,setError]=useState('');
+ const [status,setStatus]=useState<Readiness|null>(null),[statusError,setStatusError]=useState('');
  const [suggestions,setSuggestions]=useState(['What do you buy?','How does your business work?','Any advice for a newcomer?']);
  const [voice,setVoice]=useState(()=>localStorage.getItem('worldo.npcVoice')!=='off');
- const conversation=useRef<HTMLDivElement>(null),alive=useRef(true),pendingRef=useRef(false);
- const speechAvailable=typeof window!=='undefined'&&'speechSynthesis'in window;
- useEffect(()=>{alive.current=true;return()=>{alive.current=false;if(speechAvailable)window.speechSynthesis.cancel();};},[speechAvailable]);
+ const [audioState,setAudioState]=useState<NpcAudioState>('idle'),[audioError,setAudioError]=useState('');
+ const conversation=useRef<HTMLDivElement>(null),alive=useRef(true),pendingRef=useRef(false),generation=useRef(0),chatAbort=useRef<AbortController|null>(null),voiceRef=useRef(voice);
+ const player=useRef<NpcAudioPlayer|null>(null);const mode=state.mode??'demo';
+ if(!player.current)player.current=new NpcAudioPlayer((phase,problem)=>{if(alive.current){setAudioState(phase);if(problem)setAudioError(problem);}});
+ useEffect(()=>{
+  alive.current=true;const version=++generation.current;chatAbort.current?.abort();pendingRef.current=false;player.current?.dispose();
+  setLines([{role:'assistant',content:introductions[npc.id]}]);setMessage('');setPending(false);setError('');setAudioError('');setStatus(null);setStatusError('');
+  const controller=new AbortController();
+  void fetch(`/api/npc/status?npcId=${encodeURIComponent(npc.id)}`,{credentials:'same-origin',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(10000)])}).then(async response=>{const body=await response.json();if(!response.ok)throw new Error(body.error??'Dialogue status is unavailable.');if(alive.current&&generation.current===version)setStatus(body as Readiness);}).catch(e=>{if(alive.current&&!controller.signal.aborted&&generation.current===version)setStatusError(e instanceof Error?e.message:'Dialogue status is unavailable.');});
+  return()=>{alive.current=false;generation.current++;controller.abort();chatAbort.current?.abort();player.current?.dispose();};
+ },[npc.id,mode]);
  useEffect(()=>{conversation.current?.scrollTo({top:conversation.current.scrollHeight,behavior:'smooth'});},[lines,pending]);
- function speak(text:string,force=false){
-  if(!speechAvailable||(!voice&&!force))return;
-  const synth=window.speechSynthesis;synth.cancel();const utterance=new SpeechSynthesisUtterance(text);
-  const voices=synth.getVoices().filter(v=>v.lang.startsWith('en')),index=Math.max(0,SERVICE_NPCS.findIndex(n=>n.id===npc.id));
-  if(voices.length)utterance.voice=voices[index%voices.length];utterance.rate=[.98,.9,1,.94,1.04][index]??1;utterance.pitch=[.95,.82,1.06,.96,1.04][index]??1;
-  synth.speak(utterance);
- }
+ async function speak(replyId:string){setAudioError('');await player.current?.play({npcId:npc.id,replyId,mode});}
  async function send(text:string){
-  const clean=text.trim();if(!clean||pendingRef.current)return;pendingRef.current=true;setPending(true);setError('');setMessage('');
-  const history=lines.slice(-8).map(line=>({...line,content:line.content.slice(0,1000)}));setLines(previous=>[...previous,{role:'user',content:clean}]);
-  try{const reply=await request<Reply>('/api/npc/chat',{npcId:npc.id,message:clean,history,mode:state.mode??'demo'});if(!alive.current)return;setLines(previous=>[...previous,{role:'assistant',content:reply.text}]);setSource(reply.source);if(reply.suggestions?.length)setSuggestions(reply.suggestions.slice(0,3));speak(reply.text);}
-  catch(e){if(alive.current){setError(e instanceof Error?e.message:'Could not finish the conversation. Try again.');setMessage(clean);}}
-  finally{pendingRef.current=false;if(alive.current)setPending(false);}
+  const clean=text.trim();if(!clean||pendingRef.current||!status?.chat.ready)return;
+  pendingRef.current=true;setPending(true);setError('');setAudioError('');setMessage('');player.current?.stop();
+  const version=generation.current,controller=new AbortController();chatAbort.current=controller;
+  setLines(previous=>[...previous,{role:'user' as const,content:clean}].slice(-40));
+  try{
+   const response=await fetch('/api/npc/chat',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({npcId:npc.id,message:clean,mode}),signal:AbortSignal.any([controller.signal,AbortSignal.timeout(40000)])});
+   const reply=await response.json() as Reply&{error?:string};if(!response.ok)throw new Error(reply.error??'The conversation is unavailable.');
+   if(!alive.current||generation.current!==version)return;
+   setLines(previous=>[...previous,{role:'assistant',content:reply.text,replyId:reply.replyId}].slice(-40) as Line[]);if(reply.suggestions?.length)setSuggestions(reply.suggestions.slice(0,3));
+   // This follows an explicit Send/suggestion click. Browsers that block async autoplay get a Listen button.
+   if(voiceRef.current&&reply.voiceAvailable)void speak(reply.replyId);
+  }catch(e){if(alive.current&&generation.current===version&&!controller.signal.aborted){setError(e instanceof Error?e.message:'Could not finish the conversation. Try again.');setMessage(clean);}}
+  finally{if(generation.current===version){pendingRef.current=false;chatAbort.current=null;if(alive.current)setPending(false);}}
  }
- const latest=[...lines].reverse().find(line=>line.role==='assistant')?.content??'';
+ const latest=[...lines].reverse().find(line=>line.replyId),chatReady=!!status?.chat.ready;
  return <div className="npc-dialogue">
-  <aside className="npc-character-card"><NpcPortrait npcId={npc.id}/><span className="npc-nameplate"><strong>{npc.name}</strong><small>{npc.role}</small></span><span className="npc-location"><MessageCircle size={13}/>Here to talk</span></aside>
+  <aside className="npc-character-card"><NpcPortrait npcId={npc.id}/><span className="npc-nameplate"><strong>{npc.name}</strong><small>{npc.role}</small></span><span className="npc-location"><MessageCircle size={13}/>{chatReady?'Here to talk':'Shop is open'}</span></aside>
   <div className="npc-conversation">
    <div ref={conversation} className="dialogue-lines" role="log" aria-label={`Conversation with ${npc.name}`} aria-live="polite">{lines.map((line,index)=><div key={index} className={`dialogue-line ${line.role}`}><small>{line.role==='user'?'You':npc.name}</small><p>{line.content}</p></div>)}{pending&&<div className="dialogue-thinking"><LoaderCircle size={14} className="spin"/>{npc.name} is thinking…</div>}</div>
+   {!chatReady&&<p className="dialogue-availability" role="status">{status?.chat.reason||statusError||'Checking dialogue availability…'} You can browse goods and services below.</p>}
    {error&&<p role="alert" className="dialogue-error">{error}</p>}
-   <div className="dialogue-suggestions">{suggestions.map(text=><button key={text} disabled={pending} onClick={()=>void send(text)}>{text}<ArrowRight size={12}/></button>)}</div>
-   <form className="dialogue-compose" onSubmit={e=>{e.preventDefault();void send(message);}}><label className="sr-only" htmlFor="npc-message">Message {npc.name}</label><input id="npc-message" value={message} maxLength={600} autoComplete="off" placeholder={`Ask ${npc.name} something…`} onChange={e=>setMessage(e.target.value)} disabled={pending}/><button aria-label="Send message" disabled={pending||!message.trim()} type="submit"><Send size={18}/></button></form>
-   <div className="dialogue-footer"><button className="button primary" onClick={()=>onTrade(npc.place)}><ShoppingBag size={16}/>{npc.id==='station-attendant'?'Petrol & supplies':'Browse goods & services'}</button><div className="dialogue-voice">{speechAvailable&&<><button aria-label={voice?'Turn NPC voice off':'Turn NPC voice on'} title={voice?'Turn voice off':'Turn voice on'} onClick={()=>{const next=!voice;setVoice(next);localStorage.setItem('worldo.npcVoice',next?'on':'off');if(!next)window.speechSynthesis.cancel();}}>{voice?<Volume2 size={16}/>:<VolumeX size={16}/>}</button><button className="listen-reply" onClick={()=>speak(latest,true)}>Listen</button></>}<small>{source==='near-ai'?'NEAR AI dialogue':'Local dialogue'}</small></div></div>
+   <div className="dialogue-suggestions">{suggestions.map(text=><button key={text} disabled={pending||!chatReady} onClick={()=>void send(text)}>{text}<ArrowRight size={12}/></button>)}</div>
+   <form className="dialogue-compose" onSubmit={e=>{e.preventDefault();void send(message);}}><label className="sr-only" htmlFor="npc-message">Message {npc.name}</label><input id="npc-message" value={message} maxLength={600} autoComplete="off" placeholder={chatReady?`Ask ${npc.name} something…`:'AI dialogue unavailable'} onChange={e=>setMessage(e.target.value)} disabled={pending||!chatReady}/><button aria-label="Send message" disabled={pending||!chatReady||!message.trim()} type="submit"><Send size={18}/></button></form>
+   {audioError&&<p role="status" className="dialogue-error">{audioError}</p>}
+   {status&&!status.voice.ready&&<p className="dialogue-availability">{status.voice.reason}</p>}
+   <div className="dialogue-footer"><button className="button primary" onClick={()=>{player.current?.stop();onTrade(npc.place);}}><ShoppingBag size={16}/>{npc.id==='station-attendant'?'Petrol & supplies':'Browse goods & services'}</button><div className="dialogue-voice">
+    <button disabled={!status?.voice.ready} aria-label={voice?'Turn NPC voice off':'Turn NPC voice on'} title={voice?'Turn voice off':'Turn voice on'} onClick={()=>{const next=!voice;voiceRef.current=next;setVoice(next);localStorage.setItem('worldo.npcVoice',next?'on':'off');if(!next)player.current?.stop();}}>{voice?<Volume2 size={16}/>:<VolumeX size={16}/>}</button>
+    <button className="listen-reply" disabled={!latest?.replyId||!status?.voice.ready} onClick={()=>{if(audioState!=='idle')player.current?.stop();else if(latest?.replyId)void speak(latest.replyId);}}>{audioState==='loading'?'Cancel voice':audioState==='playing'?'Stop voice':'Listen'}</button>
+    <small>{latest?'NEAR AI dialogue':chatReady?'NEAR AI ready':'AI unavailable'}{status?.voice.ready?' · ElevenLabs voice':''}</small>
+   </div></div>
   </div>
  </div>;
 }

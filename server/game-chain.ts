@@ -2,6 +2,7 @@ import {nearNetworkConfiguration,transactionExplorerUrl,assertNearRpcNetwork} fr
 import {connect,keyStores,KeyPair} from 'near-api-js';
 import {nearRpc,viewContract,nearConfiguration,executionSucceeded} from './near';
 import type {Resource,PlaceId} from '../shared/types';
+import {assertMainnetReady} from './production-readiness';
 
 export interface LiveAccount {inventory:string[];balance:string;harvest_nonce:number;refinery:boolean;}
 export interface ChainReceipt {hash:string;explorerUrl:string;outcome:Record<string,unknown>;}
@@ -31,11 +32,13 @@ export function inventoryFromChain(account:LiveAccount):Record<Resource,number>{
  * On timeout, inspect harvest_nonce and the journal; never mint a new retry nonce.
  */
 export async function submitHarvestGrant(accountId:string,resource:'crude'|'ore'|'timber',amount:number,nonce:number):Promise<ChainReceipt>{
+ await assertMainnetReady();
  if(!gameChainConfigured())throw new Error('Chain gameplay is not configured.');
  if(!['crude','ore','timber'].includes(resource)||!Number.isInteger(amount)||amount<1||amount>10||!Number.isSafeInteger(nonce)||nonce<1)throw new Error('Invalid harvest grant.');
  return submitOracleCommand('grant_harvest',{account_id:accountId,token_id:resource,amount:String(amount),nonce});
 }
 export async function submitFuelConsumption(accountId:string,amount:number,nonce:number):Promise<ChainReceipt>{
+ await assertMainnetReady();
  if(!gameChainConfigured())throw new Error('Chain gameplay is not configured.');
  if(!Number.isInteger(amount)||amount<1||amount>10||!Number.isSafeInteger(nonce)||nonce<1)throw new Error('Invalid fuel consumption.');
  return submitOracleCommand('consume_fuel',{account_id:accountId,amount:String(amount),nonce});
@@ -43,6 +46,7 @@ export async function submitFuelConsumption(accountId:string,amount:number,nonce
 async function submitOracleCommand(method:'grant_harvest'|'consume_fuel',args:Record<string,unknown>):Promise<ChainReceipt>{
  const previous=oracleQueue;let release!:()=>void;oracleQueue=new Promise<void>(resolve=>{release=resolve;});await previous;
  try{
+  await assertMainnetReady();
   await assertNearRpcNetwork();
   const keyStore=new keyStores.InMemoryKeyStore();await keyStore.setKey(nearNetworkConfiguration().network,process.env.NEAR_ORACLE_ACCOUNT_ID!,KeyPair.fromString(process.env.NEAR_ORACLE_PRIVATE_KEY as `ed25519:${string}`));
   const near=await connect({networkId:nearNetworkConfiguration().network,nodeUrl:nearNetworkConfiguration().rpcUrl,keyStore});const oracle=await near.account(process.env.NEAR_ORACLE_ACCOUNT_ID!);

@@ -3,7 +3,7 @@ import {ROADS} from '../../shared/world-layout';
 export function Map({position,heading,waypoint,large=false,onSelect,depositPosition}:{position:Vec2;heading:number;waypoint:PlaceId|null;large?:boolean;onSelect?:(id:PlaceId)=>void;depositPosition?:Vec2}){
  const xy=(n:number)=>(n+110)/220*300;
  const destination=waypoint==='oilfield'&&depositPosition?depositPosition:PLACES.find(p=>p.id===waypoint)?.position;
- return <svg className={large?'world-map large':'world-map'} viewBox="0 0 300 300" aria-label="Map of Lowland">
+ return <svg className={large?'world-map large':'world-map'} viewBox="0 0 300 300" aria-label="Map of Worldo">
  <defs><pattern id={large?'grid-large':'grid-small'} width="30" height="30" patternUnits="userSpaceOnUse"><path d="M30 0H0V30" fill="none" stroke="#64705a" strokeWidth=".45"/></pattern></defs>
  <rect width="300" height="300" fill="#3c4936"/><path d="M8 4Q90 30 60 100T102 196T85 300H0V0" fill="#4c5b3d"/><path d="M270 0Q210 84 240 155T213 300H300V0" fill="#62634d"/><path d="M0 230Q70 191 140 233T300 210" stroke="#647c7a" strokeWidth="10" fill="none"/>
  <rect width="300" height="300" fill={`url(#${large?'grid-large':'grid-small'})`}/>

@@ -3,8 +3,8 @@ import type {PlaceId,Vec2} from './types';
 
 export interface TownBuilding extends Footprint {id:string;name:string;kind:'store'|'refinery'|'sawmill'|'foundry'|'house';height:number;front:'north'|'south';doorWidth:number;wall:string;roof:string;}
 export const TOWN_BUILDINGS:readonly TownBuilding[]=[
- {...BUILDINGS.depot,id:'supply',name:'LOWLAND SUPPLY',kind:'store',height:3.8,front:'south',doorWidth:2.2,wall:'cream',roof:'darkRoof'},
- {...BUILDINGS.refinery,id:'refinery-office',name:'LOWLAND REFINERY',kind:'refinery',height:4,front:'south',doorWidth:2.2,wall:'brick',roof:'roof'},
+ {...BUILDINGS.depot,id:'supply',name:'WORLDO SUPPLY',kind:'store',height:3.8,front:'south',doorWidth:2.2,wall:'cream',roof:'darkRoof'},
+ {...BUILDINGS.refinery,id:'refinery-office',name:'WORLDO REFINERY',kind:'refinery',height:4,front:'south',doorWidth:2.2,wall:'brick',roof:'roof'},
  {...BUILDINGS.sawmill,id:'sawmill-office',name:'PINE & CO.',kind:'sawmill',height:3.8,front:'south',doorWidth:2.2,wall:'wood',roof:'darkRoof'},
  {...BUILDINGS.foundry,id:'foundry-office',name:'EASTBANK FOUNDRY',kind:'foundry',height:4.5,front:'north',doorWidth:2.2,wall:'brick',roof:'darkRoof'},
  {...BUILDINGS.westHouse,id:'cedar-house',name:'CEDAR HOUSE',kind:'house',height:3,front:'south',doorWidth:1.65,wall:'wall',roof:'rust'},

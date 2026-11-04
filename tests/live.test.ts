@@ -1,4 +1,4 @@
-import {describe,it,expect,vi} from 'vitest';
+import {afterEach,beforeEach,describe,it,expect,vi} from 'vitest';
 import {mkdtemp,rm} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -10,6 +10,10 @@ import {PLACES,type PlaceId} from '../shared/types';
 
 const accountId='player.near';
 const key=createHash('sha256').update(`lowland-mainnet-v1:${accountId}`).digest('hex');
+// This suite deliberately models mainnet account IDs and journal keys. The
+// product's default network may change without changing this fixture's domain.
+beforeEach(()=>{vi.stubEnv('NEAR_NETWORK','mainnet');vi.stubEnv('NEAR_RPC_URL','');});
+afterEach(()=>vi.unstubAllEnvs());
 function gatewayFixture(){
  const player:LiveAccount={inventory:['0','0','0','0','0','0'],balance:'1000000000000000000000000',harvest_nonce:0,refinery:false};
  const accounts={depot:'depot.near',refinery:'refinery.near',sawmill:'sawmill.near',foundry:'foundry.near'};

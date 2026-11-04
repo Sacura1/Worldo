@@ -15,7 +15,7 @@ afterEach(()=>vi.unstubAllGlobals());
 
 describe('trusted production auth configuration',()=>{
  it('uses official mainnet defaults without making sign-in configured',()=>{
-  const c=nearAuthConfiguration({});expect(c.clientId).toBeNull();expect(c.issuer).toBe('https://login.auth.near.org/');expect(c.audience).toBe('auth0.jwt.fast-auth.near');
+  const c=nearAuthConfiguration({NEAR_NETWORK:'mainnet'});expect(c.clientId).toBeNull();expect(c.issuer).toBe('https://login.auth.near.org/');expect(c.audience).toBe('auth0.jwt.fast-auth.near');
  });
  it('derives the account through the same approved guard used for signing',()=>{
   const c=nearAuthConfiguration({NEAR_AUTH_CLIENT_ID:'app',NEAR_AUTH_DOMAIN:'https://approved.auth0.com/',NEAR_AUTH_AUDIENCE:'approved-api',NEAR_AUTH_GUARD_ID:'jwt#approved-registered-guard',PUBLIC_URL:'https://lowland.example',NODE_ENV:'production'});

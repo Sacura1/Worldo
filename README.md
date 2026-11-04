@@ -1,142 +1,111 @@
 # Worldo
 
-A third-person exploration and production game set in the **Lowland valley**. Search for resources, carry or drive them to local businesses, refine useful goods, and trade against finite inventories and budgets.
+A third-person game about supplying a small industrial town. Explore on foot, drive deliveries, find crude oil, mine iron ore, gather timber, and turn those resources into useful goods. Shops have finite stock and budgets; their offers change as players trade.
 
-Built for NEAR Hackathon’s **Games With Real Economies** track. Desktop and portrait touch controls share the same playable world. [Demo walkthrough](docs/demo.md) · [NEAR setup and limitations](docs/near.md)
+Built for NEAR Hackathon’s **Games With Real Economies** track. Desktop and portrait touch controls share the world. [Walkthrough](docs/demo.md) · [NEAR configuration](docs/near.md)
 
-**[Play Worldo](https://lowland-near.fly.dev/)** — deployed on Fly with persistent saves, a free practice world, and a configured NEAR testnet economy. Mainnet remains disabled. Test tokens have no cash value.
+**[Worldo on Fly](https://worldo.world/)**. The submission release targets **NEAR testnet with social sign-in**. Testnet transactions use test NEAR with no monetary value; no real funds are required. Players use the normal account and game flow, without a public practice mode or disposable browser wallet.
 
-## Run the game
+**Sign-in is not yet verified on Fly.** A read-only authorization probe on 4 November 2026 found that the official shared testnet client accepts `http://localhost:3000`, but rejects `https://worldo.world`, the legacy Fly origin and `http://localhost:5173` with a callback mismatch. The hosted origin needs an allowed callback configuration. Issuer metadata is reachable, but neither that check nor the localhost probe proves a completed social login. Localhost on port 3000 is the supported route for the next sign-in verification.
 
-Requires Node.js 24 and npm. No credentials are needed for practice mode.
+## Testnet submission setup
 
-```sh
-npm ci
-npm run dev
-```
+Requires Node.js 24 and npm.
 
-Open **http://localhost:3000** and choose **Enter Worldo**. Optional local settings go in an ignored `.env` copied from `.env.example`; the development script loads it automatically.
+1. Copy `.env.example` to ignored `.env`. Set `APP_MODE=production`, `NEAR_NETWORK=testnet`, `NEAR_AUTH_MODE=social`, `ENABLE_TESTNET=true` and `ENABLE_MAINNET=false`. Production mode selects the player-facing experience; it does not imply mainnet.
+2. Configure the deployed **testnet** game contract, four registered merchant accounts, and oracle and relayer accounts funded with test tokens. Configure the verified NEAR Auth signing deposit and a daily sponsorship budget. Social signing still uses the signing service; it is different from the historical browser test-wallet path.
+3. Use NEAR Auth configuration approved for the exact app origin. The official shared testnet configuration supports the localhost callback described above; it does not authorize arbitrary hosted origins.
+4. For the single-machine Fly testnet deployment, set `TESTNET_SINGLE_PROCESS=true` and `LOCAL_DATA_DIR` to the mounted persistent volume. Neon is optional for this testnet configuration. Supply a pooled TLS `DATABASE_URL` when using Neon; it is required for a future mainnet deployment.
+5. Supply `NEAR_AI_API_KEY` for generated conversations and `ELEVENLABS_API_KEY` plus account voice IDs for speech when those services are ready. Their absence leaves shops usable and labels dialogue or voice unavailable.
+6. Run `npm ci`, `npm test` and `npm run build`. For local social-login verification, use `PUBLIC_URL=http://localhost:3000` and run `npm run dev` or the built app with `npm start`. Open **localhost:3000**, not port 5173 or a different hostname.
 
-Practice progress saves on the server in `.local/games`, associated with an anonymous HttpOnly session cookie. Reloading retains that world. Clearing the cookie or using another browser profile starts another player. Settings includes a practice reset. Practice credits have no cash value.
+On Fly, set `PUBLIC_URL=https://worldo.world` and register that exact origin with NEAR Auth before claiming hosted sign-in works. `APP_ORIGIN`, if set, must agree. Keep credentials on the server; never use a `VITE_` variable for secrets. Local HTTP is allowed only for loopback testnet development; hosted origins use HTTPS.
 
-## The playable loop
+`/api/near/readiness` reports configuration and bounded storage, issuer and chain checks without secret values. Checks include the selected RPC network, contract views, merchant accounts, operator keys and funding; Neon checks perform a write/read/cleanup. Testnet may use the explicitly configured single-machine volume instead. Successful social login and signing require an actual user verification, including callback acceptance. `/api/health` is a service health check, not proof that account entry or transactions work.
 
-- **Every 30 seconds:** navigate, take a scanner reading, gather a load, or review a business’s offer.
-- **Every five minutes:** choose a supply route, manage energy, fuel and cargo, and decide whether to sell raw material or pay to process it.
-- **Across a session:** obtain construction materials, build a facility, and respond to changes in stock and demand.
+Missing credentials produce an unavailable sign-in or service message. They never activate a fake transaction, canned AI answer or development wallet. Mainnet remains disabled for this submission.
 
-| Resource | Product | Use |
+## The game
+
+| Gather | Process into | Use |
 | --- | --- | --- |
 | Crude oil | Petrol | Refuel the pickup |
-| Iron ore | Steel | Construct a player facility |
-| Timber | Planks | Construct a player facility |
+| Iron ore | Steel | Build a player refinery |
+| Timber | Planks | Build a player refinery |
 
-Processing consumes **two raw units per finished product**. In practice, business fees are 2 credits for petrol or steel, and 1 credit for planks. A player workshop costs 4 steel, 6 planks and 60 credits, then processes all three recipes without service fees. These practice values are separate from the chain world’s rules.
+Processing uses two raw units per finished product. On the submission network, the contract charges **0.001 test NEAR per batch** at a business. The scanner is a free equipment loan; a player refinery costs **10 steel and 10 planks** and processes crude into petrol without a business fee.
 
-The scanner costs 12 practice credits. North Ridge is a search region: the deposit location stays private until successive directional readings bring the player close enough to discover it. Surveying uses 3 energy; collection uses 6 energy and has a three-second cooldown. Each collection yields up to two units, subject to remaining resources and cargo space. Rest at the depot restores energy.
+Survey North Ridge, follow directional readings and find the hidden oil deposit. Surveying uses 3 energy; collecting uses 6 energy with a three-second cooldown. Each collection yields up to two units. Rest at the depot restores energy.
 
-The pickup holds 40 units; on foot the limit is 12, increasing to 40 while working within reach of the parked pickup. Driving consumes fuel. Refuelling consumes one petrol can and restores up to 25 fuel.
+On-foot cargo holds 12 units; the pickup holds 40, including when parked within reach. Driving consumes fuel. One petrol can restores up to 25 fuel.
 
-NPC businesses follow explicit economic rules. Conversation cannot change inventory, balances, or prices. Selling transfers a business’s existing budget to the player. Buying and processing fees transfer money back. Stock changes the price of successive units; a spread separates purchase and resale prices. Practice mode’s **Next working day** advances production, inter-business purchases, consumption and partial resource replenishment. It does not create credits. Rules are in `shared/economy-rules.ts` and `server/economy.ts`.
+Selling transfers test NEAR from the merchant’s existing game balance to the player. Buying and processing transfer it back. Trades change stock, which changes subsequent offers; buying and selling have a spread. The price board shows **what the named merchant pays for one unit** and refreshes every 20 seconds while open. Its arrows compare with arrival prices. The release identifies the selected testnet network; these are game goods and test-token balances, not real commodity prices or earnings.
 
-## A town you can enter
+Conversation does not execute trades or create resources. The player reviews economic transactions before signing. The chain-backed game does not currently run the development world's daily autonomous NPC production cycle.
 
-Eight buildings have opening doors and interiors. Approach a door and press **E** (or tap **Interact**), walk inside, then talk to the person at the counter. The supply shop, refinery office, sawmill and foundry have different staff and furnishings. The filling station has petrol pumps and its own attendant. Residents walk distinct routes, carry goods and perform work animations.
+## The town and controls
 
-Buildings, furniture, trees, rocks, fences, support posts, parked vehicles and people have collision handling. Walking follows the camera direction and turns the character toward travel; the pickup uses steering and reverse. Existing saves that overlap the rebuilt town are moved to nearby clear ground while retaining inventory and money.
+Eight buildings have doors and interiors. Open a door, walk in and talk to the shopkeeper. The supply shop, refinery, sawmill and foundry have different staff and furnishings. The filling station has pumps and an attendant. Residents follow separate walking and working routines; sellers move their heads and hands while idle.
 
-Typed NPC conversations use current stock, budgets and quotes. Authored role-specific replies work without credentials; `NEAR_AI_API_KEY` enables the optional NEAR AI Cloud adapter. Speech uses the device’s available voices and can be switched off. No microphone access is requested. The town price board shows real one-unit merchant offers and changes since arrival.
-
-## Controls
+Buildings, furniture, trees, rocks, fences, parked vehicles and people have collision handling. The camera follows the character’s travel direction and adjusts around walls, ceilings and doorways. Drag to look around manually. The character turns to walk back; held movement retains its initial reference direction so camera following cannot steer it into a circle.
 
 | Action | Desktop | Portrait touch |
 | --- | --- | --- |
-| Walk | W/A/S/D or arrows, relative to the camera | Joystick in the direction you want to walk |
-| Drive / reverse | W/S or up/down | Joystick forward/back; hold ↑ to accelerate while steering |
-| Steer the pickup | A/D or left/right | Joystick left/right |
-| Run | Hold Shift while walking | Not exposed as a separate control |
-| Look | Drag the world | Drag the world |
-| Open doors / talk / interact | E at the displayed prompt | Interact button at the displayed prompt |
+| Walk | W/A/S/D or arrows | Joystick |
+| Drive / reverse | W/S or up/down | Joystick forward/back; throttle button |
+| Steer | A/D or left/right | Joystick left/right |
+| Run | Hold Shift | — |
+| Look around | Drag the world | Drag the world |
+| Doors / talk / interact | E | Interact button |
 | Enter / leave pickup | F | Vehicle button |
-| Map / inventory | M / I | Minimap / backpack |
-| Close a panel | Escape or close button | Close button |
+| Material guides | 1 / 2 / 3 | Crude, ore and timber shortcuts |
+| Map / all cargo | M / I | Minimap / backpack |
+| Close panel | Escape | Close button |
 
-On foot, the character faces the direction of travel: S turns them toward the camera and walks back. Dragging changes the camera direction; turning the character does not move the walking camera. Open a shop door, walk inside and speak to its shopkeeper to browse goods. Map markers set a destination; they do not teleport the player. Panels pause movement. [Follow the complete resource-to-sale walkthrough](docs/demo.md).
+Each material shortcut shows its gathering site, recipe, use and route. The backpack shows all cargo. Map markers set a route rather than teleporting. Panels pause movement.
 
-## Practice, testnet and mainnet are separate
+## NPC conversations and voice
 
-| System | Implementation and current verification boundary |
-| --- | --- |
-| Practice game | Playable world, server-validated actions, production, finite merchant budgets, construction and saved progress. Each guest has an independent practice town. |
-| NEAR gameplay | Deployed testnet contract with separate account inventory, funded NPC wallets, transaction review, browser signing and actual chain receipts. The deployed test-wallet flow has passed browser activation, registration, deposit, reload, quarry harvesting, foundry processing and steel-sale verification, including exact fees and conserved player/merchant balances. Mainnet gameplay remains unverified and disabled. |
-| NEAR Intents | Mainnet-only integration; explicitly disabled on testnet because Intents has no testnet deployment. Supported-token discovery, signed 1Click quotes, deposit instructions and status checking. Funding arrives as **wNEAR** in the player’s wallet; explicit unwrapping and a game-contract deposit are separate steps. Public token discovery and a signature-verified dry quote were checked against the deployed service on 4 November 2026. No deposit address was returned and no funds were sent; settlement remains unverified. |
-| Neon | Postgres persistence and revision-checked updates are implemented. A live Neon database has not been verified for this build. |
-| Fly | Deployed at `https://lowland-near.fly.dev/`. The public health check confirms the practice server and local persistent storage. |
+NEAR AI Cloud generates responses from each character’s role, current player state, inventory, merchant budget and quotes. Conversation history is server-owned. Chat cannot grant items, alter prices or move money.
 
-The chain world uses contract-backed NEAR balances, not converted practice credits. The deployed game is configured for testnet; its tokens are for testing only. The UI shows contract prices to six decimal places and preserves exact integer amounts in transaction review. Its scanner is a free equipment loan; business processing costs 0.001 NEAR per batch. Its player refinery consumes 10 steel and 10 planks, and processes crude oil only. Practice reset and time fast-forward are unavailable in the chain world.
+ElevenLabs voices the generated reply using a server-configured voice for each character, or the shared fallback voice ID. No microphone is used. Closing dialogue or starting another reply cancels previous audio; browsers that block autoplay show a Listen button. Device speech synthesis is not used.
 
-The contract implements NEP-245 core multi-token operations; optional extensions and production integration requirements are described in [docs/near.md](docs/near.md). Harvest grants are authorized by the gameplay server and reconciled with chain state. The oracle cannot create NEAR. A pending resource transaction blocks further economic work until checked; the UI provides **Check transaction**.
+Without a configured provider, the UI labels conversation or voice unavailable. Shops remain usable. Initial greetings are authored introductions, not claimed AI output.
 
-There are no guaranteed earnings, automatic token rewards or claims of real commodity backing. Mainnet NPC budgets require real funding. Current sign-in and economic signatures require user approval; completely invisible blockchain interactions are not claimed.
+Default daily provider caps are 100 responses and 10,000 speech characters. Explicit zero disables that provider. Durable usage reservations, per-session limits, bounded input and session-bound reply IDs constrain requests. Provider calls can incur charges. See .env.example for keys, model and voice configuration.
 
-## Persistence and deployment
+## NEAR, Intents and persistence
 
-`DATABASE_URL` selects the Neon adapter. It stores game snapshots using revision checks; executable mainnet flows also require durable identity, funding and oracle records. SQL definitions are in `migrations/`. Without a database, atomic local files support development and a single-machine practice preview. `LOCAL_DATA_DIR` controls their location.
+- **Game contract:** test NEAR balances and six resource inventories on NEAR testnet, with NEP-245 core multi-token operations. Optional extensions and limitations are listed in [docs/near.md](docs/near.md).
+- **Social login:** NEAR Auth is the public account flow. Hosted callback configuration and an actual social-signing test are still required. Economic actions require signature approval; fully invisible blockchain interactions are not claimed.
+- **NEAR Intents:** unavailable on testnet. The retained mainnet adapter supports 1Click funding from supported chains into the player's own wNEAR, followed by separately reviewed unwrap and game-deposit steps. It is not part of the playable testnet walkthrough, and no mainnet settlement is claimed.
+- **Persistence:** the single-machine Fly testnet configuration uses its mounted volume for durable account-linked saves and operator journals. Keep `TESTNET_SINGLE_PROCESS=true` and do not scale this file-storage configuration to multiple machines. Neon support is implemented for shared durable records and future mainnet deployment; live Neon verification remains pending until credentials are supplied. Schema initialization is handled server-side; migrations are in `migrations/`.
+- **Fly:** serves the built client and API on one origin. Runtime secrets belong in Fly secrets. The legacy `lowland-near` hosting identifier is retained; the game’s visible name is Worldo.
 
-Fly serves the built client and API on one origin. The supplied configuration mounts persistent storage, enables the configured testnet world, and leaves `ENABLE_MAINNET=false`. Testnet identity and operator journals use the mounted storage when Neon is absent. Use Neon before running multiple application machines. Store runtime secrets through Fly’s secret manager, never in browser configuration or Git.
+Harvest grants are validated by the gameplay server and reconciled with the contract. The oracle cannot mint NEAR. Pending resource transactions block further economic actions until confirmation. NPC purchasing budgets must be funded with test tokens; selling does not create new currency.
 
-`npm start` serves the production build and requires a valid production HTTPS `PUBLIC_URL`. For a local production-build preview, use `node scripts/preview.mjs`; this deliberately runs a practice-only QA server with separate `.local/e2e` saves. Mainnet configuration and deployment steps are in [docs/near.md](docs/near.md).
+Mainnet remains a later operator setup: approved mainnet Auth configuration, deployed and funded mainnet accounts, verified Neon persistence and explicit mainnet enablement. Testnet balances and saved progress do not become real funds when that configuration changes.
 
-## Verify
+## Validation
 
-```sh
-npm test
-npm run build
-npm run test:e2e
-```
+npm test runs application/API regressions; npm run build checks TypeScript and builds the client. The Dockerfile also runs the Rust contract suite and compiles WASM before packaging.
 
-**Build before browser tests. Stop any other server on port 3000 first** so Playwright starts the QA server for the current `dist/` build. Tests use installed Microsoft Edge on local Windows and bundled Chromium elsewhere (install it with `npx playwright install chromium`), one worker, a 1440×900 desktop viewport and a 390×844 touch viewport. Set `E2E_BASE_URL` to test a deployed practice preview instead of launching a local server. CI installs Chromium before running browser checks.
+For isolated internal browser checks, `node scripts/preview.mjs` serves a development fixture on localhost:3000. It explicitly uses `APP_MODE=development` and separate `.local/e2e` saves. This fixture is not the public account flow. `npm run test:e2e` uses desktop and portrait emulation; practice scenarios require that isolated fixture, not the public social-login release.
 
-Unit/API tests cover economic conservation, movement limits, private prospecting, resource caps, concurrency, session isolation, origin checks, mainnet reconciliation and authorization boundaries. Browser tests exercise desktop scouting/extraction/processing/selling, portrait touch movement/trading, and pickup driving and parking on both layouts. Provider and chain mocks test application behavior; they do not establish production access or complete a real swap.
+The current application/API suite contains **183 tests**. The production TypeScript/client build passes. Camera entry/turn/exit and UI checks cover desktop and portrait layouts. A deliberately throttled 112-frame rendering check reproduced three cleared frames before the resize fix and zero afterward. The local testnet social-login popup was opened and inspected (email, Google and passkey options); no credentials were entered and a completed social login/signature is still unverified.
 
-On **4 November 2026**, remote Chromium verification against the deployed rebuilt town passed **six practice scenarios** across the main run and a focused resource-loop rerun:
+Earlier verification on 4 November 2026 covered six desktop/portrait practice scenarios and a real testnet sequence: registration, deposit, reload, quarry harvest, foundry processing and sale. It verified the 0.001 test NEAR fee, canonical inventory, conserved balances and sponsored signing. [Historical testnet receipts](docs/testnet-validation.json) preserve that evidence. That transaction test used a development browser wallet; it does not prove the current social-login flow or the latest camera behavior.
 
-- **Desktop resource loop, 1440×900:** buy a scanner from Morgan inside the supply shop, follow directional readings to a hidden deposit, extract crude, walk around solid machinery, open the refinery door, speak to Hale, process petrol, sell it, and verify saved progress after reload. The final focused run passed in 248.7 seconds, with one intentional platform skip and no failures or flaky results.
-- **Portrait controls, 390×844:** native touch-joystick movement, entering the depot, scanner purchase and horizontal-overflow checks.
-- **Pickup transport, both layouts:** enter, accelerate, steer, park, exit safely, reload and re-board with vehicle position, heading and fuel preserved. Portrait includes simultaneous steering/throttle and touch-control release behavior.
-- **Town tours, both layouts:** opening doors, walking inside, talking to a shopkeeper, typing a stock question, and checking that conversation leaves money and inventory unchanged. Camera inspection also checks that dragging the view does not rotate the character.
-
-A separate explicit testnet scenario passed on the final release in **151.7 seconds**: browser-owned wallet activation, registration, deposit, reload, real quarry harvesting, foundry processing and steel sale. It verified exact canonical inventory, the 0.001 NEAR processing fee, conserved player/merchant balances and unchanged native wallet balance during sponsored calls. Holding real quote responses also verified that the price board shows dashes until NEAR quotes arrive. The portrait transaction scenario was intentionally skipped. [Public testnet receipts](docs/testnet-validation.json) record the actual transactions.
-
-The scenarios select the shipped battery-saver graphics mode. These are functional browser checks using an emulated viewport and a software GPU, not a measurement of frame rate on physical phones.
-
-To repeat browser checks against the public practice preview, set `E2E_BASE_URL=https://lowland-near.fly.dev` before running `npm run test:e2e`. No local API server is launched when that variable is set. To run the same checks on a remote Fly builder:
-
-```sh
-mkdir -p .local
-fly deploy --config fly.e2e.toml --remote-only --build-only \
-  --build-arg E2E_BASE_URL=https://lowland-near.fly.dev \
-  --build-arg QA_RUN_ID=your-unique-run-id > .local/qa-build.log 2>&1
-```
-
-This builds a separate QA image and does not deploy it as the game. Use `E2E_SCOPE=transport`, `town`, or `economy` for focused practice checks. The separate `E2E_SCOPE=testnet` run verifies the network before creating a wallet or spending bounded test tokens; it never runs by default. Change `QA_RUN_ID` for each run so Docker does not reuse a previous test result. The build exits with the actual test status. Its captured log contains a `WORLDO_QA_REPORT` JSON summary and bounded, chunked screenshot artifacts; `scripts/export-qa.mjs` defines the artifact format. Use a Fly app you can build into if you are not a maintainer of the supplied configuration.
-
-```sh
-rustup target add wasm32-unknown-unknown
-cargo test --locked --manifest-path contracts/Cargo.toml
-cargo build --locked --manifest-path contracts/Cargo.toml --target wasm32-unknown-unknown --release
-```
-
-The latest application suite passed **139 tests**. The remote Linux image build passed **22 Rust unit tests**, compiled the contract to WASM, and passed TypeScript checking and the production client build. The Dockerfile runs both suites before packaging. Live Neon, NEAR Auth, mainnet funding and settlement require separate configured integration tests.
+Provider mocks verify error handling and authorization, not real provider access. Hosted and local social login, live Neon, NEAR AI and ElevenLabs still need configured end-to-end checks before they can be described as verified. Intents settlement is a separate future mainnet check.
 
 ## Visuals and limits
 
-The world uses procedural geometry, batched static meshes, bounded shadows and adaptive resolution. Barlow Condensed and IBM Plex Sans are bundled locally. UI icons are Lucide; the NEAR symbol uses published brand artwork with attribution in `public/brand/README.md`.
+Three.js renders procedural geometry, batched static meshes, bounded shadows and adaptive resolution. Barlow Condensed and IBM Plex Sans are bundled locally. Icons are Lucide; NEAR artwork attribution is in public/brand/README.md. The Worldo logo and generation provenance are in public/brand/.
 
-This is a compact prototype with on-foot exploration and transport, not a multiplayer driving simulation. NPC production and prices are rule-based; optional AI is limited to conversation. Some town activity is represented by inventory changes rather than animated logistics. The generated Worldo logo is installed in the title screen and HUD; its generation prompt is recorded in `public/brand/worldo-logo.provenance.json`. Concept mockups are not gameplay screenshots. Browser viewport emulation does not demonstrate performance on physical phones; those devices still need measurement.
+This is a compact exploration and production game, not a multiplayer simulation. Browser viewport emulation does not establish frame rate on physical phones; real devices still need measurement.
 
-## NEAR Auth application draft
+## NEAR Auth application
 
-Use **Worldo** as the application name and describe Lowland as its playable region. The use case is a 3D resource-production game with social sign-in, player-owned resources, funded NPC trading and optional cross-chain funding through NEAR Intents. The project owner must supply contact information and expected usage volumes.
+Use the [official testnet configuration](https://docs.auth.near.org/resources/testnet) for the supported localhost verification. For hosted social login, request the exact Fly callback, logout and web origin configuration from [NEAR Auth](https://docs.auth.near.org/home/apply), using **Worldo** as the application name and stating that this submission runs on testnet. Describe player-owned resources and funded NPC trading; cross-chain funding is retained for a future mainnet release. Setting an origin in `.env` does not register it with the provider.
 
-Apply through [NEAR Auth’s application page](https://docs.auth.near.org/home/apply). Register the verified deployment origin as the callback, logout and web origin, and use that same value for `PUBLIC_URL`. If `APP_ORIGIN` is set, it must agree. Mainnet access is an external approval dependency, not something the repository can manufacture.
+Account operations are checked separately from gameplay: an unavailable merchant or harvest oracle does not prevent an otherwise valid withdrawal. Auth, network, contract, durable storage, release and relayer checks still apply.

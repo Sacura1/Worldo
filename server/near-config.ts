@@ -1,6 +1,11 @@
-type Environment=Record<string,string|undefined>;
+export type Environment=Record<string,string|undefined>;
+export function appMode(env:Environment=process.env):'production'|'development'{
+ const mode=env.APP_MODE||(env.NODE_ENV==='production'?'production':'development');
+ if(mode!=='production'&&mode!=='development')throw new Error('APP_MODE must be production or development.');
+ return mode;
+}
 export function nearNetworkConfiguration(env:Environment=process.env){
- const network=env.NEAR_NETWORK||'mainnet';
+ const network=env.NEAR_NETWORK||'testnet';
  if(network!=='mainnet'&&network!=='testnet')throw new Error('NEAR_NETWORK must be mainnet or testnet.');
  const testnet=network==='testnet';
  const rpcUrl=env.NEAR_RPC_URL||(testnet?'https://test.rpc.fastnear.com':'https://free.rpc.fastnear.com');
@@ -10,10 +15,12 @@ export function nearNetworkConfiguration(env:Environment=process.env){
  return{network,testnet,rpcUrl,authContract:testnet?'fast-auth.testnet':'fast-auth.near',mpcContract:testnet?'v1.signer-prod.testnet':'v1.signer',wrappedToken:testnet?'wrap.testnet':'wrap.near',explorerUrl:testnet?'https://testnet.nearblocks.io':'https://nearblocks.io',faucetUrl:testnet?'https://near-faucet.io/':null,intentsEnabled:!testnet,chainEnabled:env[testnet?'ENABLE_TESTNET':'ENABLE_MAINNET']==='true'};
 }
 export function transactionExplorerUrl(hash:string){return `${nearNetworkConfiguration().explorerUrl}/txns/${hash}`;}
+/** A private RPC URL can contain an API credential in its path or query. */
+export function publicRpcUrl(value:string):string|null{const url=new URL(value);return url.pathname==='/'&&!url.search&&!url.hash?url.origin:null;}
 export function testnetWalletEnabled(env:Environment=process.env){
- const {testnet}=nearNetworkConfiguration(env),mode=env.NEAR_AUTH_MODE||(testnet?'testnet-wallet':'social');
+ const {testnet}=nearNetworkConfiguration(env),mode=env.NEAR_AUTH_MODE||'social';
  if(!['testnet-wallet','social'].includes(mode)||(!testnet&&mode==='testnet-wallet'))throw new Error('Browser test wallets are available only on NEAR testnet.');
- return mode==='testnet-wallet';
+ return appMode(env)==='development'&&mode==='testnet-wallet';
 }
 
 /** Only deployment configuration can select an issuer, guard or callback origin. */
@@ -21,7 +28,8 @@ export function canonicalAppOrigin(env:Environment=process.env):string{
  const normalize=(value:string)=>{
   const url=new URL(value);
   if(!['https:','http:'].includes(url.protocol)||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw new Error('PUBLIC_URL and APP_ORIGIN must be plain HTTP(S) origins.');
-  if(url.protocol!=='https:'&&(env.NODE_ENV==='production'||!['localhost','127.0.0.1','[::1]'].includes(url.hostname)))throw new Error('The public app origin must use HTTPS.');
+  const loopback=['localhost','127.0.0.1','[::1]'].includes(url.hostname);
+  if(url.protocol!=='https:'&&(!loopback||env.NODE_ENV==='production'&&(env.NEAR_NETWORK||'testnet')!=='testnet'))throw new Error('The public app origin must use HTTPS.');
   return url.origin;
  };
  const publicOrigin=env.PUBLIC_URL?normalize(env.PUBLIC_URL):undefined;

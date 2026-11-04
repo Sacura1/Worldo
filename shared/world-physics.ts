@@ -91,19 +91,36 @@ export function walkingDirection(forward:number,sideways:number,cameraYaw:number
  return{x,z,heading:Math.atan2(-x,-z),strength};
 }
 
+/** Keep a held movement gesture in world space while the follow camera turns.
+ * Releasing the controls captures the new view direction for the next gesture. */
+export function walkingReferenceYaw(previous:number|null,forward:number,sideways:number,cameraYaw:number):number|null{
+ return Math.hypot(forward,sideways)<.08?null:previous??cameraYaw;
+}
+
 export function clearLineOfSight(from:Vec2,to:Vec2,colliders:readonly Collider[],radius=.04):boolean{
  const steps=Math.max(1,Math.ceil(Math.hypot(to.x-from.x,to.z-from.z)/.15));
  for(let i=1;i<steps;i++){const t=i/steps,p={x:from.x+(to.x-from.x)*t,z:from.z+(to.z-from.z)*t};if(colliders.some(c=>c.kind!=='npc'&&circleRect(p,radius,c)))return false;}
  return true;
 }
 
-/** Trace from the subject toward the camera, not merely at the camera endpoint. */
-export function clipCameraToWorld(from:Vec2&{y:number},to:Vec2&{y:number},colliders:readonly Collider[]):Vec2&{y:number}{
- const steps=Math.max(1,Math.ceil(Math.hypot(to.x-from.x,to.y-from.y,to.z-from.z)/.12));let clear={...from};
- for(let i=1;i<=steps;i++){
-  const t=i/steps,p={x:from.x+(to.x-from.x)*t,y:Math.max(.55,from.y+(to.y-from.y)*t),z:from.z+(to.z-from.z)*t};
-  if(colliders.some(c=>p.y<(c.height??6)+.15&&circleRect(p,.18,c)))break;
-  clear=p;
+export type CameraCollider=Collider&{bottom?:number};
+
+/** Continuous swept camera volume. The clearance encloses the entire near plane,
+ * including its corners; elevated lintels and roofs need a real bottom bound. */
+export function clipCameraToWorld(from:Vec2&{y:number},to:Vec2&{y:number},colliders:readonly CameraCollider[],clearance=.24):Vec2&{y:number}{
+ const dx=to.x-from.x,dy=to.y-from.y,dz=to.z-from.z,distance=Math.hypot(dx,dy,dz);let nearest=1;
+ if(distance<1e-8)return{...from};
+ for(const c of colliders){
+  const [right,back]=axes(c.rotation??0),ox=from.x-c.x,oz=from.z-c.z;
+  const origin=[ox*right.x+oz*right.z,from.y,ox*back.x+oz*back.z];
+  const delta=[dx*right.x+dz*right.z,dy,dx*back.x+dz*back.z];
+  const min=[-c.w/2-clearance,(c.bottom??0)-clearance,-c.d/2-clearance],max=[c.w/2+clearance,(c.height??6)+clearance,c.d/2+clearance];
+  let entry=0,exit=nearest,hit=true;
+  for(let axis=0;axis<3;axis++){
+   if(Math.abs(delta[axis])<1e-9){if(origin[axis]<min[axis]||origin[axis]>max[axis]){hit=false;break;}}
+   else{let a=(min[axis]-origin[axis])/delta[axis],b=(max[axis]-origin[axis])/delta[axis];if(a>b)[a,b]=[b,a];entry=Math.max(entry,a);exit=Math.min(exit,b);if(entry>exit){hit=false;break;}}
+  }
+  if(hit&&exit>=0)nearest=Math.min(nearest,Math.max(0,entry-.015/distance));
  }
- return clear;
+ return{x:from.x+dx*nearest,y:Math.max(.35,from.y+dy*nearest),z:from.z+dz*nearest};
 }

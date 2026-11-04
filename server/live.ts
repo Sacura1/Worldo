@@ -1,5 +1,6 @@
 import {SERVICE_NPCS} from '../shared/town';
 import {nearNetworkConfiguration} from './near-config';
+import {assertMainnetReady} from './production-readiness';
 import {Router,type Request} from 'express';
 import {createHash,randomUUID} from 'node:crypto';
 import {getVerifiedIdentity} from './near';
@@ -151,6 +152,7 @@ export class LiveGameService {
 
 export function createLiveRouter(store:GameStore){
  const router=Router(),service=new LiveGameService(store);
+ router.use(async(_req,res,next)=>{try{await assertMainnetReady();next();}catch{res.status(503).json({error:'Worldo’s NEAR world is not available yet.'});}});
  const identity=(req:Request)=>{assert(chain.gameChainConfigured(),'Chain gameplay requires configured Auth, contract, oracle, merchants and Neon.',503);const i=getVerifiedIdentity(req);assert(i,'Sign in with NEAR Auth before entering chain.',401);return i!;};
  router.get('/session',async(req,res,next)=>{try{res.json(await service.session(identity(req).accountId));}catch(e){next(e);}});
  router.post('/quote',async(req,res,next)=>{try{const id=identity(req);const parsed=actionSchema.safeParse({...req.body,type:'trade'});assert(parsed.success&&parsed.data.type==='trade','Invalid quote request.');const a=parsed.data as Extract<GameAction,{type:'trade'}>;res.json(await service.quote(id.accountId,a.merchant,a.resource,a.quantity,a.side));}catch(e){next(e);}});

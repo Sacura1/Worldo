@@ -41,15 +41,29 @@ test('living town visual walkthrough enters the supply shop and meets Morgan',as
  let settledPosition=(await readSession(page)).player.position,stableReads=0;
  await expect.poll(async()=>{const position=(await readSession(page)).player.position;stableReads=Math.hypot(position.x-settledPosition.x,position.z-settledPosition.z)<.01?stableReads+1:0;settledPosition=position;return stableReads;},{timeout:15000,intervals:[400]}).toBeGreaterThanOrEqual(3);
  const beforeConversation=await readSession(page);
- await page.getByRole('textbox',{name:'Message Morgan'}).pressSequentially('What do you sell?',{delay:35});
- const responsePromise=page.waitForResponse(response=>response.url().endsWith('/api/npc/chat')&&response.request().method()==='POST');
- await page.getByRole('button',{name:'Send message',exact:true}).click();const response=await responsePromise;expect(response.ok()).toBe(true);
- const reply=await response.json();expect(['local','near-ai']).toContain(reply.source);expect(reply.text).toMatch(/petrol|steel|planks|scanner|suppl|fuel/i);
- await expect(page.locator('.dialogue-line.assistant').last()).toContainText(reply.text);
+ const provider=await page.evaluate(async()=>{const response=await fetch('/api/npc/status?npcId=morgan',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error('NPC readiness is unavailable');return response.json() as Promise<{chat:{ready:boolean;reason:string};voice:{ready:boolean;reason:string}}>;});
+ if(provider.chat.ready){
+  // This case verifies text; do not spend an additional voice allowance for a visual tour.
+  const turnVoiceOff=page.getByRole('button',{name:'Turn NPC voice off',exact:true});if(provider.voice.ready&&await turnVoiceOff.isVisible())await turnVoiceOff.click();
+  await page.getByRole('textbox',{name:'Message Morgan'}).pressSequentially('What do you sell?',{delay:35});
+  const responsePromise=page.waitForResponse(response=>response.url().endsWith('/api/npc/chat')&&response.request().method()==='POST',{timeout:45000});
+  await page.getByRole('button',{name:'Send message',exact:true}).click();const response=await responsePromise;expect(response.ok()).toBe(true);
+  const reply=await response.json();expect(reply.source).toBe('near-ai');expect(typeof reply.text).toBe('string');expect(reply.text.length).toBeGreaterThan(10);expect(reply.text.length).toBeLessThanOrEqual(1200);expect(reply.replyId).toMatch(/^[a-f0-9-]{36}$/);
+  await expect(page.locator('.dialogue-line.assistant').last()).toContainText(reply.text);
+  console.log(`Town dialogue ${testInfo.project.name}: actual configured NEAR AI reply received.`);
+ }else{
+  await expect(page.getByRole('textbox',{name:'Message Morgan'})).toBeDisabled();
+  await expect(page.getByRole('button',{name:'Send message',exact:true})).toBeDisabled();
+  await expect(page.locator('.dialogue-availability').first()).toContainText(provider.chat.reason);
+  await expect(page.locator('.dialogue-voice')).toContainText('AI unavailable');
+  console.log(`Town dialogue ${testInfo.project.name}: provider unavailable shown honestly; no AI generation claimed.`);
+ }
+ await page.screenshot({path:`test-results/town-${testInfo.project.name}-conversation.jpg`,type:'jpeg',quality:80});
+ const browse=page.getByRole('button',{name:'Browse goods & services',exact:true});await expect(browse).toBeEnabled();await browse.click();
+ await expect(page.getByRole('dialog')).toContainText(/Supply depot/i);
  const afterConversation=await readSession(page);expect(afterConversation.player.balance).toBe(beforeConversation.player.balance);expect(afterConversation.player.inventory).toEqual(beforeConversation.player.inventory);
  expect(Math.hypot(afterConversation.player.position.x-beforeConversation.player.position.x,afterConversation.player.position.z-beforeConversation.player.position.z)).toBeLessThan(.05);
  expect(afterConversation.merchants).toEqual(beforeConversation.merchants);
- await page.screenshot({path:`test-results/town-${testInfo.project.name}-conversation.jpg`,type:'jpeg',quality:80});
  await page.getByRole('button',{name:'Close panel',exact:true}).click();
  await moveUntil(page,touch,-1,state=>state.player.position.z>13.2);
  await orbitPortrait(page,touch);

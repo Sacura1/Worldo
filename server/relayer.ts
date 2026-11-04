@@ -7,6 +7,7 @@ import {createHash} from 'node:crypto';
 import bs58 from 'bs58';
 import {nearAuthConfiguration,nearNetworkConfiguration,testnetWalletEnabled,assertNearRpcNetwork} from './near-config';
 import {assertSponsoredDelegate} from './transaction-policy';
+import {assertAccountReady,assertTransactionReady} from './production-readiness';
 
 let lock=Promise.resolve();
 let initialize:Promise<void>|undefined;
@@ -38,9 +39,17 @@ export function assembleUserSignedTransaction(transaction:Transaction,signatureP
  if(!transaction.publicKey.verify(createHash('sha256').update(encodeTransaction(transaction)).digest(),signature))throw new Error('The signature does not match the player transaction.');
  return new SignedTransaction({transaction,signature:new Signature({keyType:0,data:signature})});
 }
+/** Classify the actual signed receiver and method, not an API-provided label. */
+function readinessMethod(transaction:{receiverId:string;actions:{enum?:string;functionCall?:{methodName:string}}[]}):string{
+ const call=transaction.actions.length===1&&transaction.actions[0].enum==='functionCall'?transaction.actions[0].functionCall:undefined;
+ if(call&&transaction.receiverId===process.env.NEAR_CONTRACT_ID&&['register','deposit','withdraw'].includes(call.methodName))return call.methodName;
+ if(call&&transaction.receiverId===nearNetworkConfiguration().wrappedToken&&call.methodName==='near_withdraw')return 'unwrap';
+ return 'gameplay';
+}
 /** Only the player's signature authorizes this ordinary transaction. The
  * protocol charges its signer (the player) the deposit and network gas. */
 export async function submitUserTransaction(transaction:Transaction,signaturePayload:string):Promise<Record<string,unknown>>{
+ await assertTransactionReady(readinessMethod(transaction));
  const signed=assembleUserSignedTransaction(transaction,signaturePayload);
  await assertNearRpcNetwork();
  const response=await fetch(nearNetworkConfiguration().rpcUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:'player-transaction',method:'send_tx',params:{signed_tx_base64:Buffer.from(encodeTransaction(signed)).toString('base64'),wait_until:'FINAL'}}),signal:AbortSignal.timeout(60000)});
@@ -49,7 +58,8 @@ export async function submitUserTransaction(transaction:Transaction,signaturePay
  return body.result;
 }
 /** Caller must already verify identity, exact transaction bytes and method policy. */
-export async function relayAuthorizedSignature(token:string,bytes:number[]):Promise<string>{
+export async function relayAuthorizedSignature(token:string,bytes:number[],method='gameplay'):Promise<string>{
+ await assertTransactionReady(method);
  const previous=lock;let unlock!:()=>void;lock=new Promise<void>(resolve=>{unlock=resolve;});await previous;
  try{
   if(!localRelayerConfigured())throw new Error('The signing relayer is not configured.');
@@ -74,6 +84,7 @@ export async function relayAuthorizedSignature(token:string,bytes:number[]):Prom
 }
 /** One sponsored implicit account + wNEAR storage registration per verified identity. */
 export async function provisionNearWallet(accountId:string){
+ await assertAccountReady();
  if(!localRelayerConfigured()||!/^[a-f0-9]{64}$/.test(accountId))throw new Error('Wallet preparation is not available.');
  const previous=lock;let unlock!:()=>void;lock=new Promise<void>(resolve=>{unlock=resolve;});await previous;
  let claimed=false,broadcastStarted=false;
@@ -113,6 +124,7 @@ export async function provisionNearWallet(accountId:string){
 /** Wrap the user's signed delegate action in the sponsor's transaction (NEP-366). */
 export async function submitSponsoredDelegate(delegate:DelegateAction,signaturePayload:string):Promise<Record<string,unknown>>{
  const attached=assertSponsoredDelegate(delegate);
+ await assertTransactionReady(readinessMethod(delegate));
  const previous=lock;let unlock!:()=>void;lock=new Promise<void>(resolve=>{unlock=resolve;});await previous;
  try{
   if(!localRelayerConfigured())throw new Error('The signing relayer is not configured.');

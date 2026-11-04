@@ -6,13 +6,16 @@ primary_region = "lhr"
 
 [env]
   NODE_ENV = "production"
+  APP_MODE = "production"
   PORT = "3000"
-  PUBLIC_URL = "https://lowland-near.fly.dev"
+  PUBLIC_URL = "https://worldo.world"
   LOCAL_DATA_DIR = "/data/worlds"
   ENABLE_MAINNET = "false"
   NEAR_NETWORK = "testnet"
   ENABLE_TESTNET = "true"
-  NEAR_AUTH_MODE = "testnet-wallet"
+  TESTNET_SINGLE_PROCESS = "true"
+  NEAR_AUTH_MODE = "social"
+  NEAR_RELAYER_SIGN_DEPOSIT_YOCTO = "1"
   NEAR_RPC_URL = "https://test.rpc.fastnear.com"
 
 [http_service]
