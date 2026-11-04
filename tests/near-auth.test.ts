@@ -17,6 +17,24 @@ describe('trusted production auth configuration',()=>{
  it('uses official mainnet defaults without making sign-in configured',()=>{
   const c=nearAuthConfiguration({NEAR_NETWORK:'mainnet'});expect(c.clientId).toBeNull();expect(c.issuer).toBe('https://login.auth.near.org/');expect(c.audience).toBe('auth0.jwt.fast-auth.near');
  });
+ it.each(['mainnet','testnet'])('derives the %s profile when optional auth values are blank',network=>{
+  const c=nearAuthConfiguration({NEAR_NETWORK:network,NEAR_AUTH_CLIENT_ID:' ',NEAR_AUTH_DOMAIN:'',NEAR_AUTH_AUDIENCE:'  ',NEAR_AUTH_GUARD_ID:''});
+  const domain=network==='testnet'?'login.testnet.fast-auth.com':'login.auth.near.org';
+  expect(c).toMatchObject({domain,issuer:`https://${domain}/`,guardId:`jwt#https://${domain}/`,audience:network==='testnet'?'auth0.jwt.fast-auth.testnet':'auth0.jwt.fast-auth.near',clientId:network==='testnet'?'np8paqIpMWmNbzT4xAvOOapZBjsOpptl':null});
+ });
+ it.each(['mainnet','testnet'])('rejects each opposite-network official auth value on %s',network=>{
+  const oppositeDomain=network==='mainnet'?'login.testnet.fast-auth.com':'login.auth.near.org';
+  const oppositeAudience=network==='mainnet'?'auth0.jwt.fast-auth.testnet':'auth0.jwt.fast-auth.near';
+  const changes=[{NEAR_AUTH_DOMAIN:`https://${oppositeDomain.toUpperCase()}/`},{NEAR_AUTH_AUDIENCE:oppositeAudience},{NEAR_AUTH_GUARD_ID:`jwt#https://${oppositeDomain.toUpperCase()}/`}];
+  for(const change of changes)expect(()=>nearAuthConfiguration({NEAR_NETWORK:network,NEAR_AUTH_CLIENT_ID:'approved-app',...change})).toThrow('does not match the selected network');
+ });
+ it.each(['np8paqIpMWmNbzT4xAvOOapZBjsOpptl','dsurLc47fOcWme5PkYeClBvuW0tYrmgW'])('rejects shared or example client %s on mainnet',clientId=>{
+  expect(()=>nearAuthConfiguration({NEAR_NETWORK:'mainnet',NEAR_AUTH_CLIENT_ID:` ${clientId} `})).toThrow('approved mainnet application');
+ });
+ it.each(['mainnet','testnet'])('preserves custom approved auth configuration on %s',network=>{
+  const c=nearAuthConfiguration({NEAR_NETWORK:network,NEAR_AUTH_CLIENT_ID:'approved-app',NEAR_AUTH_DOMAIN:'custom.auth0.com',NEAR_AUTH_AUDIENCE:'custom-signing-api',NEAR_AUTH_GUARD_ID:'jwt#custom-registered-guard'});
+  expect(c).toMatchObject({clientId:'approved-app',domain:'custom.auth0.com',audience:'custom-signing-api',guardId:'jwt#custom-registered-guard'});
+ });
  it('derives the account through the same approved guard used for signing',()=>{
   const c=nearAuthConfiguration({NEAR_AUTH_CLIENT_ID:'app',NEAR_AUTH_DOMAIN:'https://approved.auth0.com/',NEAR_AUTH_AUDIENCE:'approved-api',NEAR_AUTH_GUARD_ID:'jwt#approved-registered-guard',PUBLIC_URL:'https://lowland.example',NODE_ENV:'production'});
   expect(c.domain).toBe('approved.auth0.com');expect(c.audience).toBe('approved-api');expect(nearAuthDerivationPath('subject',c)).toBe('jwt#approved-registered-guard#subject');

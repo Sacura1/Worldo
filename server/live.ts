@@ -23,7 +23,12 @@ export interface LiveGateway {
 }
 const defaultGateway:LiveGateway={configured:chain.gameChainConfigured,read:chain.readLiveEconomy,quote:chain.liveTradeQuote,harvest:chain.submitHarvestGrant,fuel:chain.submitFuelConsumption,merchants:chain.merchantAccounts};
 const UNIT=10n**21n;
-const accountKey=(accountId:string)=>createHash('sha256').update(`lowland-${nearNetworkConfiguration().network}-v1:${accountId}`).digest('hex');
+const accountKey=(accountId:string)=>{
+ const contractId=process.env.NEAR_CONTRACT_ID;if(!contractId)throw new Error('Game contract is not configured.');
+ // Oracle nonces belong to one deployment. Legacy records cannot prove their
+ // contract, so leave them untouched rather than carrying a pending grant across.
+ return createHash('sha256').update(JSON.stringify(['worldo-live-v2',nearNetworkConfiguration().network,contractId,accountId])).digest('hex');
+};
 const nearAmount=(amount:string)=>{const n=Number(amount)/1e24;if(!Number.isFinite(n))throw new Error('Invalid chain balance');return n;};
 const distance=(a:{x:number;z:number},b:{x:number;z:number})=>Math.hypot(a.x-b.x,a.z-b.z);
 const assert=(ok:unknown,message:string,status=400)=>{if(!ok)throw new GameError(message,status);};

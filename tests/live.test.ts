@@ -9,10 +9,12 @@ import type {LiveAccount} from '../server/game-chain';
 import {PLACES,type PlaceId} from '../shared/types';
 
 const accountId='player.near';
-const key=createHash('sha256').update(`lowland-mainnet-v1:${accountId}`).digest('hex');
+const contractId='worldo.near';
+const scopedKey=(network='mainnet',contract=contractId)=>createHash('sha256').update(JSON.stringify(['worldo-live-v2',network,contract,accountId])).digest('hex');
+const key=scopedKey();
 // This suite deliberately models mainnet account IDs and journal keys. The
 // product's default network may change without changing this fixture's domain.
-beforeEach(()=>{vi.stubEnv('NEAR_NETWORK','mainnet');vi.stubEnv('NEAR_RPC_URL','');});
+beforeEach(()=>{vi.stubEnv('NEAR_NETWORK','mainnet');vi.stubEnv('NEAR_RPC_URL','');vi.stubEnv('NEAR_CONTRACT_ID',contractId);});
 afterEach(()=>vi.unstubAllEnvs());
 function gatewayFixture(){
  const player:LiveAccount={inventory:['0','0','0','0','0','0'],balance:'1000000000000000000000000',harvest_nonce:0,refinery:false};
@@ -29,6 +31,33 @@ async function cleanup(directory:string){if(path.resolve(directory).startsWith(p
 async function position(store:GameStore,place:PlaceId){await store.mutate(key,old=>{const n=structuredClone(old);n.state.player.position={...PLACES.find(p=>p.id===place)!.position};n.state.revision++;return n;});}
 
 describe('mainnet game binding with mocked chain transport',()=>{
+ it.each([
+  {label:'network',network:'testnet',contract:contractId},
+  {label:'contract',network:'mainnet',contract:'replacement.near'},
+ ])('isolates pending oracle grants when the $label changes',async({network,contract})=>{
+  const f=await fixture();try{
+   await position(f.store,'forest');f.gateway.harvest=vi.fn(async()=>{throw new Error('Unconfirmed old deployment grant');});
+   await expect(f.service.action(accountId,{type:'gather',resource:'timber'},'shared-harvest-request')).rejects.toThrow('awaiting final confirmation');
+   const previous=await f.store.get(key);expect(previous!.meta.pendingOracle!.nonce).toBe(1);
+   vi.stubEnv('NEAR_NETWORK',network);vi.stubEnv('NEAR_CONTRACT_ID',contract);
+   const fresh=gatewayFixture(),service=new LiveGameService(f.store,fresh.gateway),state=await service.session(accountId);
+   expect(state.live!.pendingOracle).toBe(false);expect(state.player.position).not.toEqual(previous!.state.player.position);
+   const deploymentKey=scopedKey(network,contract);
+   await f.store.mutate(deploymentKey,old=>{const next=structuredClone(old);next.state.player.position={...PLACES.find(p=>p.id==='forest')!.position};next.state.revision++;return next;});
+   const result=await service.action(accountId,{type:'gather',resource:'timber'},'shared-harvest-request');
+   expect(fresh.harvest).toHaveBeenCalledExactlyOnceWith(accountId,'timber',2,1);expect(result.state.live!.pendingOracle).toBe(false);
+   expect(await f.store.get(key)).toEqual(previous);
+  }finally{await cleanup(f.directory);}
+ });
+ it('leaves legacy unscoped journals untouched instead of carrying forward their oracle sequence',async()=>{
+  const directory=await mkdtemp(path.join(os.tmpdir(),'lowland-live-'));try{
+   const store=new GameStore(directory,''),legacyKey=createHash('sha256').update(`lowland-mainnet-v1:${accountId}`).digest('hex');
+   await store.create(legacyKey);const legacy=await store.mutate(legacyKey,old=>{const next=structuredClone(old);next.meta.confirmedOracleNonce=41;next.state.player.position={...PLACES.find(p=>p.id==='forest')!.position};next.state.revision++;return next;});
+   const chain=gatewayFixture(),service=new LiveGameService(store,chain.gateway);await service.session(accountId);
+   await position(store,'forest');await service.action(accountId,{type:'gather',resource:'timber'},'fresh-deployment-grant');
+   expect(chain.harvest).toHaveBeenCalledExactlyOnceWith(accountId,'timber',2,1);expect(await store.get(legacyKey)).toEqual(legacy);
+  }finally{await cleanup(directory);}
+ });
  it('uses chain balances and inventory instead of practice grants',async()=>{const f=await fixture();try{const state=await f.service.session(accountId);expect(state.mode).toBe('live');expect(state.player.balance).toBe(1);expect(state.player.inventory.crude).toBe(0);expect(state.live!.balanceYocto).toBe(f.player.balance);expect(state.live!.build).toEqual({steel:10,planks:10,credits:0});await expect(f.service.action(accountId,{type:'advance'},'advance-request')).rejects.toThrow('cannot be fast-forwarded');}finally{await cleanup(f.directory);}});
  it('reserves an oracle nonce before minting and prevents replay after movement IDs are evicted',async()=>{const f=await fixture();try{await position(f.store,'forest');const result=await f.service.action(accountId,{type:'gather',resource:'timber'},'harvest-request-01');expect(result.state.player.inventory.timber).toBe(2);expect(f.harvest).toHaveBeenCalledTimes(1);expect(result.state.live!.receipt!.hash).toBe('receipt-01');await f.store.mutate(key,old=>{const n=structuredClone(old);n.meta.requests=[];n.state.revision++;return n;});await f.service.action(accountId,{type:'gather',resource:'timber'},'harvest-request-01');expect(f.harvest).toHaveBeenCalledTimes(1);expect(f.player.harvest_nonce).toBe(1);}finally{await cleanup(f.directory);}});
  it('recovers a committed transaction after losing its HTTP response without minting twice',async()=>{const f=await fixture();try{await position(f.store,'forest');const original=f.gateway.harvest;f.gateway.harvest=async(...args)=>{await original(...args);throw new Error('Network response lost');};const result=await f.service.action(accountId,{type:'gather',resource:'timber'},'harvest-network-01');expect(result.state.player.inventory.timber).toBe(2);expect(result.state.live!.pendingOracle).toBe(false);expect(f.player.harvest_nonce).toBe(1);}finally{await cleanup(f.directory);}});

@@ -29,7 +29,7 @@ describe('real NPC provider boundaries',()=>{
  it('returns actual model text, caps provider output, and counts failures conservatively',async()=>{
   configured();const {folder,usage}=await budget();const request=vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(JSON.stringify({choices:[{message:{content:'Bring your two ore loads to my foundry, and we can make a steel beam.'}}]}))).mockResolvedValueOnce(new Response('{}',{status:503}));const provider=new NpcProviders(usage,request);
   expect(await provider.chat('rosa',[{role:'user',content:'What can I do with this ore?'}])).toContain('steel beam');
-  expect(request.mock.calls[0][0]).toBe('https://cloud-api.near.ai/v1/chat/completions');expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toMatchObject({model:'qwen/qwen3-32b',max_tokens:600});
+  expect(request.mock.calls[0][0]).toBe('https://cloud-api.near.ai/v1/chat/completions');expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toMatchObject({model:'Qwen/Qwen3-VL-30B-A3B-Instruct',max_tokens:600});
   await expect(provider.chat('rosa',[])).rejects.toThrow('temporarily unavailable');expect(JSON.parse(await readFile(path.join(folder,'npc-usage.json'),'utf8'))['near-ai']).toBe(2);
   request.mockResolvedValueOnce(new Response(JSON.stringify({choices:[{message:{content:'x'.repeat(1201)}}]})));await expect(provider.chat('rosa',[])).rejects.toThrow('unavailable');
  });

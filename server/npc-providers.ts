@@ -12,7 +12,7 @@ export function npcReadiness(npcId:string):NpcReadiness{
  const limits=npcAllowances();
  const chatReason=!process.env.NEAR_AI_API_KEY?.trim()?'NEAR AI dialogue is unavailable: the server API key is not configured.':!limits.ai?'NEAR AI dialogue is disabled by the daily allowance.':'';
  const speechReason=!process.env.ELEVENLABS_API_KEY?.trim()?'ElevenLabs voice is unavailable: the server API key is not configured.':!limits.speech?'ElevenLabs voice is disabled by the daily allowance.':!voiceId(npcId)?'ElevenLabs voice is unavailable: this resident has no configured voice.':'';
- return{chat:{ready:!chatReason,reason:chatReason,model:process.env.NEAR_AI_MODEL?.trim()||'qwen/qwen3-32b'},voice:{ready:!speechReason,reason:speechReason,model:process.env.ELEVENLABS_MODEL_ID?.trim()||'eleven_flash_v2_5'}};
+ return{chat:{ready:!chatReason,reason:chatReason,model:process.env.NEAR_AI_MODEL?.trim()||'Qwen/Qwen3-VL-30B-A3B-Instruct'},voice:{ready:!speechReason,reason:speechReason,model:process.env.ELEVENLABS_MODEL_ID?.trim()||'eleven_flash_v2_5'}};
 }
 async function readBounded(response:Response,maxBytes:number):Promise<Buffer>{
  if(!response.body)throw new Error('Missing provider response');const reader=response.body.getReader(),chunks:Uint8Array[]=[];let bytes=0;

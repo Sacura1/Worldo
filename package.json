@@ -8,6 +8,8 @@
     "dev:client": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "start": "node --env-file-if-exists=.env --import tsx scripts/start.mjs",
+    "start:testnet": "node --import tsx scripts/start-network.ts testnet",
+    "start:mainnet": "node --import tsx scripts/start-network.ts mainnet",
     "test": "vitest run",
     "test:e2e": "playwright test"
   },

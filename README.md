@@ -25,6 +25,43 @@ On Fly, set `PUBLIC_URL=https://worldo.world` and register that exact origin wit
 
 Missing credentials produce an unavailable sign-in or service message. They never activate a fake transaction, canned AI answer or development wallet. Mainnet remains disabled for this submission.
 
+## One codebase, two network profiles
+
+The demo runs at **http://localhost:3000 against public NEAR testnet**. Localhost
+is the shared social-login application's accepted callback, not a private
+blockchain. Mainnet uses the same game and contract source with its own deployment.
+
+- Copy `config/testnet.env.example` to ignored `.env.testnet`, supply the testnet
+  accounts, and run `npm run build` then `npm run start:testnet`.
+- Copy `config/mainnet.env.example` to ignored `.env.mainnet`. After mainnet Auth
+  approval, configure its exact callback, deploy and initialize the game contract,
+  fund the mainnet operators/merchants and supply a separate Neon database or
+  branch. Verify the MPC signing deposit, then set `ENABLE_MAINNET=true` and run
+  `npm run start:mainnet` on the approved HTTPS origin.
+
+The profile launch commands read only the selected file and discard inherited
+application settings, so a shell's old RPC, credentials or database cannot override
+the profile. They require social login and the normal production game flow.
+Restart to change profiles; no frontend rebuild is needed just for runtime network
+configuration. `npm start` remains compatible with the existing generic `.env`.
+Fly uses runtime secrets rather than these local files; see the
+[activation instructions](docs/near.md#network-profiles-and-mainnet-activation).
+
+Only empty templates are tracked. Private keys, API keys and database passwords
+belong in ignored local files or Fly secrets. Auth client IDs are public application
+identifiers, not secret keys; the official shared testnet ID is documented in code.
+Mainnet cannot be called end-to-end verified until real approved login, signing and
+settlement succeed. Intents remains mainnet-only and is not demonstrated as a
+completed swap in the local testnet video.
+
+Live saves and oracle journals are scoped to network, contract and account.
+The contract-scoped format starts fresh local progress rather than importing
+legacy saves whose original contract cannot be established. Legacy rows remain
+untouched; on-chain balances, inventory and refinery ownership are reloaded.
+Reconcile any legacy pending grants against their original contract before
+migrating a live deployment. Keep one app instance: login sessions and sponsor
+transaction locks are currently held in-process.
+
 ## The game
 
 | Gather | Process into | Use |
@@ -92,7 +129,7 @@ npm test runs application/API regressions; npm run build checks TypeScript and b
 
 For isolated internal browser checks, `node scripts/preview.mjs` serves a development fixture on localhost:3000. It explicitly uses `APP_MODE=development` and separate `.local/e2e` saves. This fixture is not the public account flow. `npm run test:e2e` uses desktop and portrait emulation; practice scenarios require that isolated fixture, not the public social-login release.
 
-The current application/API suite contains **183 tests**. The production TypeScript/client build passes. Camera entry/turn/exit and UI checks cover desktop and portrait layouts. A deliberately throttled 112-frame rendering check reproduced three cleared frames before the resize fix and zero afterward. The local testnet social-login popup was opened and inspected (email, Google and passkey options); no credentials were entered and a completed social login/signature is still unverified.
+The current application/API suite contains **199 tests**. The production TypeScript/client build passes. Network profile checks cover inherited credentials, mixed networks and deployment-scoped saves. Camera entry/turn/exit and UI checks cover desktop and portrait layouts. A deliberately throttled 112-frame rendering check reproduced three cleared frames before the resize fix and zero afterward. The local testnet social-login popup was opened and inspected (email, Google and passkey options); no credentials were entered and a completed social login/signature is still unverified.
 
 Earlier verification on 4 November 2026 covered six desktop/portrait practice scenarios and a real testnet sequence: registration, deposit, reload, quarry harvest, foundry processing and sale. It verified the 0.001 test NEAR fee, canonical inventory, conserved balances and sponsored signing. [Historical testnet receipts](docs/testnet-validation.json) preserve that evidence. That transaction test used a development browser wallet; it does not prove the current social-login flow or the latest camera behavior.
 

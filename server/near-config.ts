@@ -49,7 +49,16 @@ export function nearAuthConfiguration(env:Environment=process.env){
  const guardId=env.NEAR_AUTH_GUARD_ID?.trim()||`jwt#${issuer}`;
  if(audience.length>512||/\s/.test(audience))throw new Error('Invalid NEAR Auth signing audience.');
  if(!guardId.startsWith('jwt#')||guardId.length>512||/\s/.test(guardId))throw new Error('Invalid NEAR Auth JWT guard identifier.');
- return{clientId:env.NEAR_AUTH_CLIENT_ID?.trim()||(testnet?'np8paqIpMWmNbzT4xAvOOapZBjsOpptl':null),domain:url.hostname,issuer,audience,guardId,appOrigin:canonicalAppOrigin(env)};
+ const oppositeDomain=testnet?'login.auth.near.org':'login.testnet.fast-auth.com';
+ const oppositeAudience=testnet?'auth0.jwt.fast-auth.near':'auth0.jwt.fast-auth.testnet';
+ if(url.hostname===oppositeDomain)throw new Error('NEAR_AUTH_DOMAIN does not match the selected network.');
+ if(audience===oppositeAudience)throw new Error('NEAR_AUTH_AUDIENCE does not match the selected network.');
+ // Custom registered guards need not be URLs; recognize only the official issuer hosts.
+ let guardDomain:string|undefined;try{guardDomain=new URL(guardId.slice(4)).hostname;}catch{}
+ if(guardDomain===oppositeDomain)throw new Error('NEAR_AUTH_GUARD_ID does not match the selected network.');
+ const clientId=env.NEAR_AUTH_CLIENT_ID?.trim()||(testnet?'np8paqIpMWmNbzT4xAvOOapZBjsOpptl':null);
+ if(!testnet&&clientId&&['np8paqIpMWmNbzT4xAvOOapZBjsOpptl','dsurLc47fOcWme5PkYeClBvuW0tYrmgW'].includes(clientId))throw new Error('NEAR_AUTH_CLIENT_ID must identify an approved mainnet application.');
+ return{clientId,domain:url.hostname,issuer,audience,guardId,appOrigin:canonicalAppOrigin(env)};
 }
 
 export function nearAuthDerivationPath(subject:string,config=nearAuthConfiguration()){

@@ -183,7 +183,7 @@ budgets, processing rules and exact game quotes; conversation cannot execute eco
 To enable model dialogue, create a server API key at
 [NEAR AI Cloud](https://cloud.near.ai/) and set `NEAR_AI_API_KEY`. The adapter uses
 the official `https://cloud-api.near.ai/v1/chat/completions` endpoint and
-`NEAR_AI_MODEL` (default [`qwen/qwen3-32b`](https://near.ai/models/qwen/qwen3-32b)).
+`NEAR_AI_MODEL` (default [`Qwen/Qwen3-VL-30B-A3B-Instruct`](https://docs.near.ai/cloud/models)).
 Set `NEAR_AI_DAILY_REQUEST_LIMIT` to an explicit daily cap (default 100; zero disables).
 If the key is absent, the daily allowance is exhausted or the provider fails,
 chat reports that AI is unavailable; it does not present scripted text as a model
@@ -273,9 +273,57 @@ NEP-413 encoding, stale/wrong-subject tokens, failed popups and concurrent reque
 Production sign-in and a real delegated action still need an end-to-end test with
 approved credentials; mocks do not establish provider approval or availability.
 
+## Network profiles and mainnet activation
+
+NEAR testnet is a public chain with independent state from mainnet. Serving the
+client on localhost changes the website origin, not the blockchain. The shared
+testnet Auth application currently accepts our `http://localhost:3000` callback;
+that is sufficient for a local social-login demo against public testnet. See the
+[official Auth network configuration](https://docs.auth.near.org/resources/networks).
+
+Use `config/testnet.env.example` and `config/mainnet.env.example` as complete,
+credential-free templates for ignored `.env.testnet` and `.env.mainnet`. Run
+`npm run build`, then `npm run start:testnet` or `npm run start:mainnet`. The launcher
+reads the chosen profile before importing any application module and removes
+inherited app environment values. It never falls back to the generic `.env` or
+the other profile. The mainnet template deliberately starts with
+`ENABLE_MAINNET=false`; missing credentials never enable transactions.
+
+After approval, mainnet activation needs these independent resources:
+
+1. The approved mainnet Auth client, issuer, signing audience and exact
+   `https://worldo.world` callback/web origin. Default issuer/guard settings derive
+   from `NEAR_NETWORK=mainnet`; clear old explicit testnet overrides.
+2. A mainnet Worldo contract deployed from `contracts/`, initialized with the
+   intended owner and oracle, and registered/funded mainnet merchant accounts.
+   Follow **Contract build and deployment** below. A network switch cannot deploy
+   a contract or copy testnet balances.
+3. Funded mainnet relayer and oracle accounts, their server keys, an explicit daily
+   sponsor budget and the verified signing deposit for the deployed mainnet MPC.
+4. A pooled TLS Neon connection for the mainnet environment. Keep its database or
+   branch separate from demo data. Add the AI and speech service credentials if
+   those features are to be enabled.
+5. `NEAR_NETWORK=mainnet`, `ENABLE_TESTNET=false`, `ENABLE_MAINNET=true`,
+   `APP_MODE=production` and `NEAR_AUTH_MODE=social` together. Restart with that
+   profile and check `/api/near/readiness`, then verify real sign-in, signing,
+   registration/deposit, a game trade and withdrawal. Exercise Intents separately
+   with a deliberately small approved mainnet amount; no testnet swap exists.
+
+On Fly, install the entire matching configuration as runtime secrets/settings;
+local `.env` files are excluded from the image. Clear or replace old Auth, RPC,
+account and database overrides rather than changing only `NEAR_NETWORK`.
+Preserve the container's `LOCAL_DATA_DIR=/data/worlds`, `PORT=3000` and
+`PUBLIC_URL=https://worldo.world`. Keep one machine until login sessions and
+sponsor nonce locking have shared coordination. The checked-in `fly.toml` remains
+the testnet deployment; change its network settings for a mainnet release as well.
+
+Network profiles need no application code edits. Provisioning and a real mainnet
+smoke test remain required; unit tests do not prove provider approval or settlement.
+This change does not activate mainnet or alter the hosted deployment.
+
 ## Mainnet funding
 
-Set `NEAR_CONTRACT_ID` to the deployed Lowland contract and `ENABLE_MAINNET=true`
+Set `NEAR_CONTRACT_ID` to the deployed Worldo contract and `ENABLE_MAINNET=true`
 only after deployment checks. `DATABASE_URL` is required for production executable
 quotes. `NEAR_INTENTS_API_KEY` is optional, server-only partner authentication from
 <https://partners.near-intents.org/>; unauthenticated requests have the platform's
