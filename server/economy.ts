@@ -53,10 +53,10 @@ export function migrateNavigation(saved:SavedGame,now=Date.now()):SavedGame{
 export function newGame(id:string=randomUUID(),now=Date.now()):SavedGame {
  const state:GameState={mode:'demo',day:1,revision:0,player:{id,name:'New arrival',position:{...START_POSITION},heading:0,driving:false,fuel:70,energy:100,scanner:false,balance:120,inventory:emptyInventory(),facility:false,discovered:false,xp:0},truckPosition:{...TRUCK_POSITION},truckHeading:-Math.PI/2,doors:{},deposits:{crude:80,ore:100,timber:100},production:{fuelConsumed:0,materialsUsed:0},merchants:[
  {id:'depot',name:'Supply depot',budget:300,stock:{...emptyInventory(),petrol:12,steel:10,planks:12}},
- {id:'refinery',name:'Lowland Refinery',budget:180,stock:{...emptyInventory(),crude:8,petrol:16}},
+ {id:'refinery',name:'Worldo Refinery',budget:180,stock:{...emptyInventory(),crude:8,petrol:16}},
  {id:'sawmill',name:'Pine & Co. Sawmill',budget:160,stock:{...emptyInventory(),timber:10,planks:16}},
  {id:'foundry',name:'Eastbank Foundry',budget:200,stock:{...emptyInventory(),ore:12,steel:14}}],activities:[]};
- log(state,'Welcome to Lowland. Your pickup is parked outside the supply depot.',now);
+ log(state,'Welcome to Worldo. Your pickup is parked outside the supply depot.',now);
  return {state,meta:{lastMoveAt:now,lastGatherAt:0,lastSurveyAt:0,lastAdvanceAt:0,moveCredit:2,requests:[],oilDeposit:createOilDeposit(randomUUID()),navigationVersion:NAVIGATION_VERSION}};
 }
 
@@ -73,7 +73,7 @@ export function applyAction(saved:SavedGame,action:GameAction,now=Date.now()):Sa
  switch(action.type){
  case 'move':{
   expect([action.x,action.z,action.heading].every(Number.isFinite),'Invalid position.');
-  expect(Math.abs(action.x)<=100&&Math.abs(action.z)<=100,'You have reached the edge of Lowland.');
+  expect(Math.abs(action.x)<=100&&Math.abs(action.z)<=100,'You have reached the edge of Worldo.');
   expect(action.driving===p.driving,'Enter or exit the pickup first.');
   const elapsed=Math.max(0,Math.min(2000,now-meta.lastMoveAt))/1000;
   const speed=p.driving?13.2:6.2;

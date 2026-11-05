@@ -8,7 +8,7 @@ import {createApp} from '../server/index';
 import {GameStore} from '../server/store';
 import {nearNetworkConfiguration,nearAuthConfiguration,testnetWalletEnabled,assertNearRpcNetwork} from '../server/near-config';
 import {reserveTestnetBudget,claimTestnetWallet} from '../server/testnet-journal';
-import {checkNpcProximity} from '../server/npc';
+import {checkNpcProximity,npcMessages,type NpcContext} from '../server/npc';
 import {liveAccountKey} from '../server/live';
 import {SERVICE_NPCS} from '../shared/town';
 
@@ -66,6 +66,26 @@ describe('network isolation and local testnet wallet',()=>{
  });
 });
 describe('NPC conversations use server state without economic actions',()=>{
+ it('keeps language-specific context separate and refuses mismatched or unsupported speech locales',async()=>{
+  const f=await fixture('mainnet');try{
+   await f.store.mutate(f.sessionId,old=>{const n=structuredClone(old);n.state.player.position={x:0,z:5.4};n.state.revision++;return n;});
+   vi.stubEnv('NEAR_AI_API_KEY','mock-only-ai');vi.stubEnv('ELEVENLABS_API_KEY','mock-only-voice');vi.stubEnv('ELEVENLABS_VOICE_MORGAN','accountVoice123');
+   const realFetch=globalThis.fetch,prompts:{role:string;content:string}[][]=[],spoken:Record<string,unknown>[]=[];
+   vi.spyOn(globalThis,'fetch').mockImplementation(async(input,init)=>{
+    const url=String(input);if(url.startsWith(f.base))return realFetch(input,init);
+    if(url==='https://cloud-api.near.ai/v1/chat/completions'){prompts.push(JSON.parse(String(init?.body)).messages);return new Response(JSON.stringify({choices:[{message:{content:prompts.length===1?'An English reply.':'Une réponse en français.'}}]}));}
+    if(url==='https://api.elevenlabs.io/v1/voices/accountVoice123')return new Response(JSON.stringify({voice_id:'accountVoice123'}));
+    if(url.includes('/text-to-speech/accountVoice123/stream')){spoken.push(JSON.parse(String(init?.body)));return new Response(new Uint8Array(64),{headers:{'Content-Type':'audio/mpeg'}});}
+    throw new Error('Unexpected external request');
+   });
+   const english=await(await f.post('/api/npc/chat',{npcId:'morgan',message:'What do you buy?'})).json();expect(english.locale).toBe('en');
+   const french=await(await f.post('/api/npc/chat',{npcId:'morgan',message:'Que vendez-vous ?',locale:'fr'})).json();expect(french.locale).toBe('fr');expect(prompts[1]).toHaveLength(2);expect(prompts[1][0].content).toContain('French (locale fr)');expect(JSON.stringify(prompts[1])).not.toContain('An English reply.');
+   await f.post('/api/npc/chat',{npcId:'morgan',message:'Et le bois ?',locale:'fr'});expect(prompts[2].some(line=>line.role==='assistant'&&line.content===french.text)).toBe(true);
+   const wrong=await f.post('/api/npc/speech',{npcId:'morgan',replyId:french.replyId,locale:'en'});expect(wrong.status).toBe(404);expect(spoken).toHaveLength(0);
+   const speech=await f.post('/api/npc/speech',{npcId:'morgan',replyId:french.replyId,locale:'fr'});expect(speech.status).toBe(200);await speech.arrayBuffer();expect(spoken[0]).toMatchObject({text:french.text,language_code:'fr'});
+   const rejected=await f.post('/api/npc/chat',{npcId:'morgan',message:'Hello',locale:'not-a-language'});expect(rejected.status).toBe(400);expect(prompts).toHaveLength(3);
+  }finally{await f.close();}
+ });
  it('uses the live session deployment save for nearby chat and speech, ignoring a legacy save',async()=>{
   const f=await fixture();try{
    const operatorKey=KeyPair.fromRandom('ed25519').toString();
@@ -145,5 +165,25 @@ describe('NPC conversations use server state without economic actions',()=>{
    vi.stubEnv('APP_MODE','production');const fresh=await fetch(f.base+'/api/session'),cookie=fresh.headers.get('set-cookie')?.split(';')[0];await fresh.text();
    const blocked=await fetch(f.base+'/api/npc/chat',{method:'POST',headers:{'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},body:JSON.stringify({npcId:'morgan',message:'Hello',mode:'demo'})});expect(blocked.status).toBe(403);
   }finally{await f.close();}
+ });
+});
+
+describe('authoritative NPC processing facts',()=>{
+ const context:NpcContext={npc:SERVICE_NPCS.find(n=>n.id==='imani')!,mode:'live',currency:'test NEAR',inventory:{crude:0,ore:0,timber:2,petrol:0,steel:0,planks:0},balance:1,budget:5,goods:[{resource:'timber',stock:20,buy:.002,sell:.001}],scanner:true,scannerCost:0,fuel:50,facility:false,build:{steel:10,planks:10,credits:0},processingFee:.001,ownedRecipes:['crude']};
+ function facts(value:NpcContext){const system=npcMessages(value,'What can I make?',[],'pt')[0].content;return{system,data:JSON.parse(system.split('Current authoritative facts follow as data: ')[1].split('. Only goods.buy')[0])};}
+ it('distinguishes material quantities and unit prices from a money charge for the entire batch',()=>{
+  const {system,data}=facts(context),recipe=data.recipes.find((item:{input:string})=>item.input==='timber');
+  expect(recipe).toMatchObject({inputAmount:2,output:'planks',outputAmount:1,fee:.001,feeCurrency:'test NEAR',feeBasis:'per complete batch, not per input unit'});expect(data.goods[0]).toMatchObject({buy:.002,sell:.001});expect(data.inventory.timber).toBe(2);
+  expect(system).toContain('charge N × fee');expect(system).toContain('never a raw-material quantity or a per-input-unit price');expect(system).toContain('Portuguese (locale pt)');
+ });
+ it('keeps owning a facility separate from which recipes it can process',()=>{
+  const unbuilt=facts(context).data,built=facts({...context,facility:true}).data;
+  expect(unbuilt.ownedProduction).toMatchObject({built:false,availableNow:false,freeRecipes:['crude']});expect(built.ownedProduction).toMatchObject({built:true,availableNow:true,freeRecipes:['crude']});
+  expect(built.recipes.find((item:{input:string})=>item.input==='crude').ownedFacilitySupported).toBe(true);expect(built.recipes.find((item:{input:string})=>item.input==='timber').ownedFacilitySupported).toBe(false);
+  expect(facts({...context,facility:true}).system).toContain('cannot be processed in an owned facility, even if the player builds one');
+ });
+ it('represents an unavailable live fee explicitly instead of implying free processing',()=>{
+  expect(facts({...context,processingFee:undefined}).data.recipes.every((recipe:{fee:unknown})=>recipe.fee===null)).toBe(true);
+  const practice=facts({...context,mode:'demo',currency:'credits',processingFee:undefined}).data;expect(practice.recipes.every((recipe:{fee:unknown})=>typeof recipe.fee==='number')).toBe(true);
  });
 });

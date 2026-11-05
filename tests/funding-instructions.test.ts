@@ -2,12 +2,27 @@ import {afterEach,describe,expect,it,vi} from 'vitest';
 import {createElement,isValidElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {FundingInstructions,fundingInstructions,type FundingQuote,type FundingToken} from '../src/components/FundingInstructions';
+import {setLocale} from '../src/lib/i18n';
+
+// This suite directly inspects the element tree to exercise clipboard handlers.
+// Keep real translations; only the React subscription requires a mounted root.
+vi.mock('../src/lib/i18n',async importOriginal=>{
+ const actual=await importOriginal<typeof import('../src/lib/i18n')>();
+ return{...actual,useI18n:()=>({locale:actual.getLocale(),t:actual.t,formatNumber:actual.formatNumber})};
+});
 
 const tokens:FundingToken[]=[{assetId:'asset-eth',symbol:'ETH',blockchain:'eth',decimals:18},{assetId:'asset-usdc',symbol:'USDC',blockchain:'sol',decimals:6}];
 const quote:FundingQuote={id:'quote-id',dry:false,verified:true,request:{originAsset:'asset-eth',amount:'1234567890123456789'},quote:{depositAddress:'quoted-source-address',depositMemo:'00000421',amountInFormatted:'1.23',amountOutFormatted:'12'}};
-afterEach(()=>vi.unstubAllGlobals());
+afterEach(()=>{setLocale('en');vi.unstubAllGlobals();});
 
 describe('exact funding instructions',()=>{
+ it('localizes Arabic instructions while preserving payment digits, addresses and memo bytes',()=>{
+  setLocale('ar');
+  const html=renderToStaticMarkup(createElement(FundingInstructions,{quote,tokens,onCopyError:()=>{}}));
+  expect(html).toContain('أرسل بالضبط');expect(html).toContain('المذكرة المطلوبة');expect(html).not.toContain('SEND EXACTLY');
+  expect(html).toContain('dir="ltr"');expect(html).toContain('1.234567890123456789 ETH');expect(html).toContain('quoted-source-address');expect(html).toContain('00000421');
+  expect(fundingInstructions(quote,tokens)).toMatchObject({amount:'1.234567890123456789',address:'quoted-source-address',memo:'00000421'});
+ });
  it('renders the required memo with leading zeros, exact source amount and chain',()=>{
   const html=renderToStaticMarkup(createElement(FundingInstructions,{quote,tokens,onCopyError:()=>{}}));
   expect(html).toContain('1.234567890123456789 ETH');expect(html).toContain('Ethereum');expect(html).toContain('quoted-source-address');expect(html).toContain('REQUIRED MEMO');expect(html).toContain('00000421');expect(html).toContain('Copy required memo');expect(html).toContain('address alone is not enough');

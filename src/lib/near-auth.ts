@@ -1,3 +1,4 @@
+import {t} from './i18n';
 export interface NearIdentity {accountId:string;publicKey:string;expiresAt:number;authMethod?:'near-auth'|'testnet-wallet';network?:'mainnet'|'testnet';}
 type AuthConfig={authConfigured:boolean;clientId:string|null;authDomain:string;authAudience:string;authGuardId:string;appOrigin:string;};
 let providerPromise:Promise<import('./near-provider').NearAuthProvider>|undefined;
@@ -17,7 +18,7 @@ function authorizationWindow(){
  // browsers may block a popup first created after async challenge preparation.
  const popup=window.open('about:blank','_blank','popup=yes,width=500,height=680');
  if(!popup)throw new Error('Allow the NEAR sign-in popup, then try again.');
- popup.document.title='NEAR authorization';popup.document.body.textContent='Connecting to NEAR Auth…';
+ popup.document.title=t('NEAR authorization');popup.document.body.textContent=t('Connecting to NEAR Auth…');
  return popup;
 }
 export async function loginNear(mode:'social'|'testnet-wallet'='social'):Promise<NearIdentity>{

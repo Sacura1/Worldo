@@ -39,6 +39,8 @@ export function getMaterials(){
 }
 export class Builder {
  root=new THREE.Group();
+ private translatedLabels:((translate:(message:string)=>string)=>void)[]=[];
+ setTranslator(translate:(message:string)=>string){for(const redraw of this.translatedLabels)redraw(translate);}
  box(mat:string,x:number,y:number,z:number,w:number,h:number,d:number,rx=0,ry=0,rz=0){return this.mesh(boxGeometry,mat,x,y,z,w,h,d,rx,ry,rz);}
  rounded(mat:string,x:number,y:number,z:number,w:number,h:number,d:number,rx=0,ry=0,rz=0){return this.mesh(roundedGeometry,mat,x,y,z,w,h,d,rx,ry,rz);}
  cyl(mat:string,x:number,y:number,z:number,r:number,h:number,rx=0,ry=0,rz=0){return this.mesh(cylinderGeometry,mat,x,y,z,r,h,r,rx,ry,rz);}
@@ -47,7 +49,14 @@ export class Builder {
  mesh(geo:THREE.BufferGeometry,mat:string,x:number,y:number,z:number,sx:number,sy:number,sz:number,rx=0,ry=0,rz=0){const m=new THREE.Mesh(geo,getMaterials()[mat]);m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.rotation.set(rx,ry,rz);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;}
  beam(mat:string,a:THREE.Vector3,b:THREE.Vector3,width=.1){const m=this.box(mat,0,0,0,width,a.distanceTo(b),width);m.position.copy(a).add(b).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),b.clone().sub(a).normalize());return m;}
  label(text:string,x:number,y:number,z:number,w:number,h:number,rotation=0,bg='#303b31',fg='#eee8ce'){
-  const c=document.createElement('canvas');c.width=1024;c.height=256;const ctx=c.getContext('2d')!;ctx.fillStyle=bg;ctx.fillRect(0,0,1024,256);ctx.strokeStyle=fg;ctx.lineWidth=4;ctx.strokeRect(12,12,1000,232);ctx.fillStyle=fg;ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`600 ${text.length>20?53:70}px "Barlow Condensed", sans-serif`;ctx.fillText(text.toUpperCase(),512,132,940);const tex=new THREE.CanvasTexture(c);tex.colorSpace=THREE.SRGBColorSpace;
+  const c=document.createElement('canvas');c.width=1024;c.height=256;const ctx=c.getContext('2d')!,tex=new THREE.CanvasTexture(c);tex.colorSpace=THREE.SRGBColorSpace;
+  const redraw=(translate:(message:string)=>string)=>{
+   const translated=translate(text).toLocaleUpperCase();ctx.clearRect(0,0,c.width,c.height);ctx.fillStyle=bg;ctx.fillRect(0,0,1024,256);ctx.strokeStyle=fg;ctx.lineWidth=4;ctx.strokeRect(12,12,1000,232);ctx.fillStyle=fg;ctx.textAlign='center';ctx.textBaseline='middle';ctx.direction=/[\u0590-\u08ff]/.test(translated)?'rtl':'ltr';
+   let size=70;const font=()=>`${size}px "Barlow Condensed", "Noto Sans Arabic", "Noto Sans Devanagari", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", system-ui, sans-serif`;
+   ctx.font=`600 ${font()}`;while(size>24&&ctx.measureText(translated).width>940){size-=2;ctx.font=`600 ${font()}`;}
+   ctx.fillText(translated,512,132,940);tex.needsUpdate=true;
+  };
+  redraw(message=>message);this.translatedLabels.push(redraw);
   const mat=new THREE.MeshStandardMaterial({map:tex,roughness:.9});const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat);m.position.set(x,y,z);m.rotation.y=rotation;this.root.add(m);return m;
  }
  batch(vertexColors=false){
@@ -216,7 +225,7 @@ export function createEnvironment(){
  cameraStructures.push({x:9.65,z:15.5,w:9,d:12.4,bottom:3.88,height:4.28});
  for(const shelf of[{x:-5,z:4.3,w:.75,d:5},{x:5,z:4.3,w:.75,d:5},{x:0,z:1,w:5.7,d:.65},{x:52.8,z:-31.5,w:.65,d:3},{x:-47.5,z:-30,w:.65,d:3.5},{x:43,z:50,w:3.5,d:.65}])cameraStructures.push({...shelf,height:2.35});
  let openDoors=new Set<string>(),colliders=getWorldColliders(openDoors);
- return{group:sceneGroup,facility,get colliders(){return colliders;},getColliders:()=>colliders,getCameraColliders:():readonly CameraCollider[]=>[
+ return{group:sceneGroup,facility,setTranslator:(translate:(message:string)=>string)=>b.setTranslator(translate),get colliders(){return colliders;},getColliders:()=>colliders,getCameraColliders:():readonly CameraCollider[]=>[
   ...colliders.slice(0,-TOWN_DOORS.length),...cameraStructures,
   ...TOWN_DOORS.map(door=>{const rotation=doorGroups.get(door.id)!.rotation.y;return{x:door.hinge.x+Math.cos(rotation)*door.width/2,z:door.hinge.z-Math.sin(rotation)*door.width/2,w:door.width,d:.18,height:2.65,rotation};}),
  ],getNpcColliders:():readonly Collider[]=>residents.map(actor=>({x:actor.root.position.x,z:actor.root.position.z,w:.6,d:.6,height:1.8,kind:'npc',id:actor.npc.id})),getInterior:getTownInterior,

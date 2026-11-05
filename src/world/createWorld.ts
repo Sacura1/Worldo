@@ -35,6 +35,7 @@ export function createWorld(container:HTMLElement,options:WorldOptions):WorldHan
  let width=1,height=1,mobile=false,ratio=1.4,frame=0,last=performance.now(),lastSync=0,lastStats=performance.now(),statFrames=0,lowFrames=0,lastMoved=false,resizePending=false,resetRatio=true;
  const renderSurface=new RenderSurface();
  let lastSent=new THREE.Vector3(999,0,999),lastSentHeading=999;const desiredCamera=new THREE.Vector3(),lookTarget=new THREE.Vector3();
+ let audioElapsed=0,audioDistance=0,audioCollision=0;
  const updateSize=()=>{width=Math.max(container.clientWidth,1);height=Math.max(container.clientHeight,1);mobile=width<700;camera.aspect=width/height;camera.fov=mobile?66:58;camera.updateProjectionMatrix();const limit=Math.min(window.devicePixelRatio||1,mobile?1.3:1.6);ratio=quality==='low'?1:quality==='high'||resetRatio?limit:Math.min(ratio,limit);resetRatio=false;resizePending=false;renderSurface.queue({width,height,pixelRatio:ratio});};
  // ResizeObserver runs after paint/layout. It must never clear a finished frame.
  const resizeObserver=new ResizeObserver(()=>{resizePending=true;});resizeObserver.observe(container);updateSize();renderSurface.apply(renderer);
@@ -48,7 +49,7 @@ export function createWorld(container:HTMLElement,options:WorldOptions):WorldHan
  const pointerMove=(e:PointerEvent)=>{if(!pointer||e.pointerId!==pointer.id||paused)return;const yaw=(e.clientX-pointer.x)*.004;if(driving)orbitOffset-=yaw;else{cameraYaw-=yaw;if(inputYaw!==null)inputYaw-=yaw;}lastManualLook=performance.now();cameraPitch=THREE.MathUtils.clamp(cameraPitch+(e.clientY-pointer.y)*.0025,-.08,.65);pointer.x=e.clientX;pointer.y=e.clientY;};
  const pointerUp=(e:PointerEvent)=>{if(pointer?.id===e.pointerId)pointer=null;};const wheel=(e:WheelEvent)=>{if(paused)return;e.preventDefault();cameraDistance=THREE.MathUtils.clamp(cameraDistance+e.deltaY*.004,4.5,11);};
  renderer.domElement.addEventListener('pointerdown',pointerDown);renderer.domElement.addEventListener('pointermove',pointerMove);renderer.domElement.addEventListener('pointerup',pointerUp);renderer.domElement.addEventListener('pointercancel',pointerUp);renderer.domElement.addEventListener('lostpointercapture',pointerUp);renderer.domElement.addEventListener('wheel',wheel,{passive:false});
- const onContextLost=(e:Event)=>{e.preventDefault();contextLost=true;container.dataset.contextLost='true';};const onContextRestored=()=>{contextLost=false;delete container.dataset.contextLost;};renderer.domElement.addEventListener('webglcontextlost',onContextLost);renderer.domElement.addEventListener('webglcontextrestored',onContextRestored);
+ const onContextLost=(e:Event)=>{e.preventDefault();contextLost=true;container.dataset.contextLost='true';options.onAudioFrame?.({elapsed:0,distance:0,speed:0,throttle:0,driving,engineOn:false,paused:true,indoors:false,collision:0,x:playerPosition.x,z:playerPosition.z});};const onContextRestored=()=>{contextLost=false;delete container.dataset.contextLost;};renderer.domElement.addEventListener('webglcontextlost',onContextLost);renderer.domElement.addEventListener('webglcontextrestored',onContextRestored);
  function nearPlace(){
   let closest:PlaceId|null=null,min=Infinity;for(const place of PLACES){const d=Math.hypot(playerPosition.x-place.position.x,playerPosition.z-place.position.z);if(d<(place.id==='oilfield'?30:10)&&d<min){min=d;closest=place.id;}}if(closest!==near){near=closest;options.onNear(near);}
   const candidates:WorldInteraction[]=[];
@@ -76,6 +77,9 @@ export function createWorld(container:HTMLElement,options:WorldOptions):WorldHan
   cameraPitch=THREE.MathUtils.clamp(cameraPitch+external.lookY*.003,-.08,.65);external.lookX=external.lookY=0;
   const activeColliders=[...(driving?colliders:walkingColliders),...environment.getNpcColliders()];
   const motion=resolveWorldMotion(playerPosition,{x:playerPosition.x+movementX,z:playerPosition.z+movementZ},previousHeading,heading,driving,activeColliders),moved=Math.hypot(motion.position.x-playerPosition.x,motion.position.z-playerPosition.z)>.0001;
+  const travelled=Math.hypot(motion.position.x-playerPosition.x,motion.position.z-playerPosition.z);
+  audioElapsed+=dt;if(!paused)audioDistance+=travelled;
+  if(driving&&motion.blocked&&Math.abs(speed)>1.2)audioCollision=Math.max(audioCollision,Math.min(1,Math.abs(speed)/10));
   playerPosition.set(motion.position.x,0,motion.position.z);heading=motion.heading;if(driving&&motion.blocked)speed*=.65;
   character.root.visible=!driving;character.root.position.copy(playerPosition);character.root.rotation.y=heading;
   if(driving){truck.root.position.copy(playerPosition);truck.root.rotation.set(0,heading,0);for(const wheel of truck.wheels)wheel.rotation.x-=speed*dt/.44;}
@@ -87,6 +91,7 @@ export function createWorld(container:HTMLElement,options:WorldOptions):WorldHan
   if(driving){if(!pointer&&Math.abs(speed)>.3)orbitOffset=THREE.MathUtils.damp(orbitOffset,0,1.2,dt);const targetYaw=heading+orbitOffset;cameraYaw+=Math.atan2(Math.sin(targetYaw-cameraYaw),Math.cos(targetYaw-cameraYaw))*(1-Math.exp(-5*dt));}
   else{if(walking.strength>.08)lastFootMovement=now;if(!paused&&!pointer&&now-lastManualLook>1000&&now-lastFootMovement<1000)cameraYaw+=Math.atan2(Math.sin(heading-cameraYaw),Math.cos(heading-cameraYaw))*(1-Math.exp(-4.5*dt));}
   const interior=environment.getInterior(playerPosition),distance=(driving?cameraDistance*1.6:interior?Math.min(cameraDistance,mobile?3.4:3.1):cameraDistance)*(mobile?1.08:1),heightOffset=driving?2.1:interior?.55:1.25;
+  if(audioElapsed>=1/15){options.onAudioFrame?.({elapsed:audioElapsed,distance:audioDistance,speed:audioDistance/audioElapsed,throttle:forward,driving,engineOn:driving&&(state?.player.fuel??0)>0,paused,indoors:!!interior,collision:audioCollision,x:playerPosition.x,z:playerPosition.z});audioElapsed=audioDistance=audioCollision=0;}
   // The swept sphere encloses all four near-plane corners, even on wide desktops.
   const halfNearHeight=camera.near*Math.tan(THREE.MathUtils.degToRad(camera.fov/2)),clearance=Math.max(.24,Math.hypot(camera.near,halfNearHeight,halfNearHeight*camera.aspect)+.09);
   lookTarget.set(playerPosition.x,driving?1.2:1.25,playerPosition.z);desiredCamera.set(playerPosition.x+Math.sin(cameraYaw)*distance,lookTarget.y+heightOffset+cameraPitch*distance,playerPosition.z+Math.cos(cameraYaw)*distance);
@@ -116,7 +121,12 @@ export function createWorld(container:HTMLElement,options:WorldOptions):WorldHan
    truck.cargo.visible=Object.values(next.player.inventory).reduce((a,v)=>a+v,0)>0;environment.facility.visible=next.player.facility;depositMarker.visible=next.player.discovered&&!!next.player.depositPosition;if(next.player.depositPosition)depositMarker.position.set(next.player.depositPosition.x,0,next.player.depositPosition.z);nearPlace();
   },
   setInput(input){Object.assign(external,input);resetReleasedGesture();},
-  setPaused(value){paused=value;if(value)clear();else hasStarted=true;},
+  setTranslator(translate){
+   environment.setTranslator(translate);renderer.domElement.setAttribute('aria-label',translate('Worldo interactive 3D world'));
+   const label=translate('OIL DEPOSIT');markerContext.clearRect(0,0,512,128);markerContext.fillStyle='#e6b65a';markerContext.fillRect(0,0,512,128);markerContext.fillStyle='#283325';markerContext.textAlign='center';markerContext.textBaseline='middle';markerContext.direction=/[\u0590-\u08ff]/.test(label)?'rtl':'ltr';
+   let size=48;markerContext.font=`bold ${size}px system-ui, sans-serif`;while(size>20&&markerContext.measureText(label).width>470){size-=2;markerContext.font=`bold ${size}px system-ui, sans-serif`;}markerContext.fillText(label,256,67,470);markerTexture.needsUpdate=true;
+  },
+  setPaused(value){paused=value;if(value){clear();audioDistance=audioCollision=0;options.onAudioFrame?.({elapsed:0,distance:0,speed:0,throttle:0,driving,engineOn:driving&&(state?.player.fuel??0)>0,paused:true,indoors:!!environment.getInterior(playerPosition),collision:0,x:playerPosition.x,z:playerPosition.z});}else hasStarted=true;},
   setQuality(value){if(value===quality)return;quality=value;renderer.shadowMap.enabled=value!=='low';resetRatio=true;resizePending=true;lowFrames=0;},
   dispose(){
    if(disposed)return;disposed=true;cancelAnimationFrame(frame);resizeObserver.disconnect();window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',clear);

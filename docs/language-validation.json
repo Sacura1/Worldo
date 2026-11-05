@@ -1,0 +1,119 @@
+{
+  "checkedAt": "2026-11-05T09:33:15.110Z",
+  "status": "passed",
+  "scope": "Live NPC provider integration, synthetic authoritative context, isolated local usage accounting; no chain transactions or production data changes.",
+  "verification": {
+    "requestedLanguageText": "passed",
+    "providedRecipeAndFee": "passed after 2 factual regressions were corrected and rechecked",
+    "speechGeneration": "passed",
+    "mp3Decoding": "passed",
+    "browserGameEndToEnd": "not performed in this provider check",
+    "nativeSpeakerOrAccentReview": "not performed"
+  },
+  "counts": {
+    "locales": 10,
+    "characters": 5,
+    "modelRequests": 12,
+    "speechRequests": 14,
+    "speechCharacters": 1594,
+    "decodedFiles": 14
+  },
+  "locales": [
+    {
+      "locale": "en",
+      "character": "imani",
+      "chat": "passed",
+      "speech": "ok",
+      "decode": "passed"
+    },
+    {
+      "locale": "fr",
+      "character": "imani",
+      "chat": "passed",
+      "speech": "ok",
+      "decode": "passed"
+    },
+    {
+      "locale": "es",
+      "character": "imani",
+      "chat": "passed",
+      "speech": "ok",
+      "decode": "passed"
+    },
+    {
+      "locale": "pt",
+      "character": "imani",
+      "chat": "passed",
+      "speech": "ok",
+      "decode": "passed"
+    },
+    {
+      "locale": "de",
+      "character": "imani",
+      "chat": "passed",
+      "speech": "ok",
+      "decode": "passed"
+    },
+    {
+      "locale": "ar",
+      "character": "imani",
+      "chat": "passed",
+      "speech": "ok",
+      "decode": "passed"
+    },
+    {
+      "locale": "hi",
+      "character": "imani",
+      "chat": "passed",
+      "speech": "ok",
+      "decode": "passed"
+    },
+    {
+      "locale": "zh",
+      "character": "imani",
+      "chat": "passed",
+      "speech": "ok",
+      "decode": "passed"
+    },
+    {
+      "locale": "ja",
+      "character": "imani",
+      "chat": "passed",
+      "speech": "ok",
+      "decode": "passed"
+    },
+    {
+      "locale": "ko",
+      "character": "imani",
+      "chat": "passed",
+      "speech": "ok",
+      "decode": "passed"
+    }
+  ],
+  "otherCharacterVoices": [
+    {
+      "character": "morgan",
+      "voiceAvailability": "ok",
+      "speech": "ok",
+      "decode": "passed"
+    },
+    {
+      "character": "hale",
+      "voiceAvailability": "ok",
+      "speech": "ok",
+      "decode": "passed"
+    },
+    {
+      "character": "rosa",
+      "voiceAvailability": "ok",
+      "speech": "ok",
+      "decode": "passed"
+    },
+    {
+      "character": "station-attendant",
+      "voiceAvailability": "ok",
+      "speech": "ok",
+      "decode": "passed"
+    }
+  ]
+}

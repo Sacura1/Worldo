@@ -5,6 +5,8 @@ import os from 'node:os';
 import {NpcBudget} from '../server/npc-budget';
 import {NpcProviders,npcReadiness} from '../server/npc-providers';
 import {NpcAudioPlayer} from '../src/lib/npc-audio';
+import {npcTranslations} from '../src/locales/npc';
+import {LANGUAGES} from '../shared/languages';
 
 const folders:string[]=[];
 afterEach(async()=>{vi.unstubAllEnvs();vi.restoreAllMocks();for(const folder of folders.splice(0)){if(!path.resolve(folder).startsWith(path.resolve(os.tmpdir())+path.sep))throw new Error('Invalid test directory');await rm(folder,{recursive:true,force:true});}});
@@ -21,6 +23,11 @@ describe('durable NPC provider allowances',()=>{
  it('fails closed on a corrupt journal rather than resetting paid usage',async()=>{const {folder,usage}=await budget();await writeFile(path.join(folder,'npc-usage.json'),'not json');await expect(usage.reserve('near-ai',1,100)).rejects.toThrow();});
 });
 describe('real NPC provider boundaries',()=>{
+ it.each(['en','fr','es','pt','de','ar','hi','zh','ja','ko'] as const)('requests %s speech explicitly without changing the selected character voice',async locale=>{
+  configured();const {usage}=await budget();const request=vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(JSON.stringify({voice_id:'accountVoice123'}))).mockResolvedValueOnce(new Response(new Uint8Array(64),{headers:{'Content-Type':'audio/mpeg'}}));
+  const provider=new NpcProviders(usage,request);await provider.speech('morgan','A short reply.',undefined,locale);
+  expect(String(request.mock.calls[1][0])).toContain('/accountVoice123/stream');expect(JSON.parse(String(request.mock.calls[1][1]?.body))).toMatchObject({language_code:locale,text:'A short reply.',model_id:'eleven_flash_v2_5'});
+ });
  it('does not call either provider without keys or with an explicit zero allowance',async()=>{
   const {usage}=await budget(),request=vi.fn<typeof fetch>(),provider=new NpcProviders(usage,request);vi.stubEnv('NEAR_AI_API_KEY','');vi.stubEnv('ELEVENLABS_API_KEY','');
   expect(npcReadiness('morgan').chat.ready).toBe(false);await expect(provider.chat('morgan',[])).rejects.toThrow('key');await expect(provider.speech('morgan','Hello')).rejects.toThrow('key');
@@ -43,6 +50,11 @@ describe('real NPC provider boundaries',()=>{
 });
 describe('NPC speech interruption and browser playback',()=>{
  const reply={npcId:'morgan',replyId:'first',mode:'demo' as const};
+ it('never reuses an audio cache entry across languages',async()=>{
+  const request=vi.fn<typeof fetch>().mockImplementation(async()=>new Response(new Uint8Array(64),{headers:{'Content-Type':'audio/mpeg'}}));
+  const player=new NpcAudioPlayer(()=>{},{request,createAudio:()=>({play:async()=>{},pause:()=>{},src:'blob:voice',onended:null,onerror:null}),createUrl:()=> 'blob:voice',revokeUrl:()=>{}});
+  await player.play({...reply,locale:'en'});await player.play({...reply,locale:'fr'});expect(request).toHaveBeenCalledTimes(2);expect(JSON.parse(String(request.mock.calls[1][1]?.body)).locale).toBe('fr');player.dispose();
+ });
  it('does not start stale speech after cancellation and releases audio URLs',async()=>{
   let finish!:(response:Response)=>void;const request=vi.fn<typeof fetch>().mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;})).mockResolvedValue(new Response(new Uint8Array(64),{headers:{'Content-Type':'audio/mpeg'}}));
   const playing={play:vi.fn(async()=>{}),pause:vi.fn(),src:'blob:voice',onended:null,onerror:null};const createAudio=vi.fn(()=>playing),revokeUrl=vi.fn(),state=vi.fn();const player=new NpcAudioPlayer(state,{request,createAudio,createUrl:()=> 'blob:voice',revokeUrl});
@@ -53,5 +65,13 @@ describe('NPC speech interruption and browser playback',()=>{
   const request=vi.fn<typeof fetch>().mockResolvedValue(new Response(new Uint8Array(64),{headers:{'Content-Type':'audio/mpeg'}}));const play=vi.fn().mockRejectedValueOnce(Object.assign(new Error('Blocked'),{name:'NotAllowedError'})).mockResolvedValue(undefined),state=vi.fn();
   const player=new NpcAudioPlayer(state,{request,createAudio:()=>({play,pause:vi.fn(),src:'blob:voice',onended:null,onerror:null}),createUrl:()=> 'blob:voice',revokeUrl:vi.fn()});
   await player.play(reply);expect(state).toHaveBeenLastCalledWith('idle','Tap Listen to play this reply.');await player.play(reply);expect(request).toHaveBeenCalledTimes(1);expect(state).toHaveBeenLastCalledWith('playing');player.dispose();
+ });
+});
+
+describe('NPC translation coverage',()=>{
+ it('supplies complete nonempty copy and matching placeholders for all ten languages',()=>{
+  const source=Object.keys(npcTranslations.en).sort();expect(LANGUAGES).toHaveLength(10);
+  const placeholders=(text:string)=>[...text.matchAll(/\{\w+\}/g)].map(match=>match[0]).sort();
+  for(const {code}of LANGUAGES){expect(Object.keys(npcTranslations[code]).sort()).toEqual(source);for(const key of source){const value=npcTranslations[code][key];expect(value.trim(),`${code}: ${key}`).not.toBe('');expect(placeholders(value),`${code}: ${key}`).toEqual(placeholders(key));if(code!=='en')expect(value,`${code}: ${key}`).not.toBe(key);}}
  });
 });

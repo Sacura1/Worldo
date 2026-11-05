@@ -1,5 +1,6 @@
 import {GameError} from './economy';
 import {NpcBudget} from './npc-budget';
+import {isLocale,type Locale} from '../shared/languages';
 
 const voiceVariables:Record<string,string>={morgan:'ELEVENLABS_VOICE_MORGAN',hale:'ELEVENLABS_VOICE_HALE',imani:'ELEVENLABS_VOICE_IMANI',rosa:'ELEVENLABS_VOICE_ROSA','station-attendant':'ELEVENLABS_VOICE_THEO'};
 export const MAX_NPC_REPLY=1200;
@@ -35,7 +36,8 @@ export class NpcProviders {
    return text;
   }catch{throw new GameError('NEAR AI dialogue is temporarily unavailable. You can still browse goods and services.',503);}
  }
- async speech(npcId:string,text:string,signal?:AbortSignal):Promise<Buffer>{
+ async speech(npcId:string,text:string,signal?:AbortSignal,locale:Locale='en'):Promise<Buffer>{
+  if(!isLocale(locale))throw new GameError('Choose a supported language.',400);
   const ready=npcReadiness(npcId).voice;if(!ready.ready)throw new GameError(ready.reason,503);
   if(!text||text.length>MAX_NPC_REPLY)throw new GameError('This reply cannot be voiced.',400);
   const id=voiceId(npcId);if(!/^[a-zA-Z0-9_-]{5,100}$/.test(id))throw new GameError('ElevenLabs voice is unavailable: the configured voice ID is invalid.',503);
@@ -52,7 +54,7 @@ export class NpcProviders {
   }
   await this.budget.reserve('elevenlabs',text.length,npcAllowances().speech);
   try{
-   const response=await this.request(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(id)}/stream?output_format=mp3_44100_128`,{method:'POST',headers,body:JSON.stringify({text,model_id:ready.model,voice_settings:{stability:.5,similarity_boost:.75}}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(25000)]):AbortSignal.timeout(25000)});
+   const response=await this.request(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(id)}/stream?output_format=mp3_44100_128`,{method:'POST',headers,body:JSON.stringify({text,model_id:ready.model,language_code:locale,voice_settings:{stability:.5,similarity_boost:.75}}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(25000)]):AbortSignal.timeout(25000)});
    if(!response.ok||!response.headers.get('content-type')?.includes('audio/')){await response.body?.cancel();throw new Error('Speech provider rejected request');}
    const audio=await readBounded(response,1024*1024);if(audio.length<32)throw new Error('Empty speech');return audio;
   }catch{throw new GameError('ElevenLabs voice is temporarily unavailable. The written reply is still available.',503);}

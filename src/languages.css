@@ -1,0 +1,43 @@
+/* Language changes affect text and reading order, never world coordinates or controls. */
+html:lang(ar){--locale-font:'Noto Sans Arabic','IBM Plex Sans',sans-serif}
+html:lang(hi){--locale-font:'Noto Sans Devanagari','IBM Plex Sans',sans-serif}
+html:lang(zh){--locale-font:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif}
+html:lang(ja){--locale-font:'Noto Sans JP','Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif}
+html:lang(ko){--locale-font:'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif}
+html:lang(ar) body,html:lang(hi) body,html:lang(zh) body,html:lang(ja) body,html:lang(ko) body{font-family:var(--locale-font)}
+html:lang(ar) :is(h1,h2,h3,.eyebrow,.edition,.day-label,.panel-header),html:lang(hi) :is(h1,h2,h3,.eyebrow,.edition,.day-label,.panel-header),html:lang(zh) :is(h1,h2,h3,.eyebrow,.edition,.day-label,.panel-header),html:lang(ja) :is(h1,h2,h3,.eyebrow,.edition,.day-label,.panel-header),html:lang(ko) :is(h1,h2,h3,.eyebrow,.edition,.day-label,.panel-header){font-family:var(--locale-font);letter-spacing:normal;line-height:1.5}
+.language-control{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:17px;min-width:0;font-size:13px;color:#eee3c3}
+.language-control select{max-width:210px;min-width:140px;min-height:42px;color:#fff0ce;background:#233c2e;border:1px solid #b99a60;border-radius:7px 3px;padding:7px 12px;font-family:system-ui,'Noto Sans Arabic','Noto Sans Devanagari',sans-serif;cursor:pointer}
+.language-control select option{background:#233c2e;color:#fff0ce}
+.title-language{position:absolute;z-index:15;top:91px;right:5%;max-width:calc(100% - 32px)}
+.title-language .language-control{background:#193125dd;border:1px solid #8f895f;border-radius:8px;padding:6px 9px;margin:0;gap:10px}
+.title-language select{min-height:34px;min-width:130px;padding:5px 8px}
+.sound-volume{gap:12px;flex-wrap:wrap}.sound-volume input{flex:1;min-width:100px;max-width:180px;accent-color:#e2bf79}.sound-volume output{min-width:40px;text-align:end;unicode-bidi:isolate}
+.button,.dialogue-suggestions button,.tabs button{white-space:normal;overflow-wrap:anywhere}
+.setting>div,.merchant-strip>div,.trade-line>span,.summary-row>span,.panel-header>div{min-width:0}
+.panel-header h2,.objective h3,.dialogue-compose input{overflow-wrap:anywhere}
+.setting select{max-width:48%}.trade-line{gap:12px}.trade-line>b{flex-shrink:0;unicode-bidi:isolate}
+.map-panel svg,.minimap svg,.touch-controls,.world-canvas,.world-canvas canvas{direction:ltr}
+.wallet-account,.payment-address,.funding-address,code,pre,kbd{direction:ltr;unicode-bidi:isolate}
+html[dir=rtl] .title-content{left:auto;right:6%;text-align:right}
+html[dir=rtl] .title-language{right:auto;left:5%}
+html[dir=rtl] .title-logo{margin-left:0;margin-right:-20px}
+html[dir=rtl] .modal-backdrop{justify-content:flex-start}
+html[dir=rtl] .panel{text-align:right}
+html[dir=rtl] .dialogue-line.user{margin-left:0;margin-right:auto}
+html[dir=rtl] .dialogue-line.assistant{margin-right:0;margin-left:auto}
+html[dir=rtl] .eyebrow,html[dir=rtl] .title-edition{letter-spacing:normal}
+@media(max-width:700px){
+ .title-language{top:68px;right:16px}.title-language .language-control>span{display:none}.title-language select{max-width:156px;min-width:126px}
+ html[dir=rtl] .title-language{left:16px;right:auto}
+ html[dir=rtl] .title-content{right:7%;left:auto}
+ .panel-header h2{font-size:clamp(21px,6vw,29px)}
+ .setting{gap:12px}.setting strong{font-size:13px}.setting small{font-size:11px}
+ label.setting:has(>select){display:grid;grid-template-columns:minmax(0,1fr)}
+ .setting>select{width:100%;max-width:100%;min-width:0}
+ .title-controls{flex-wrap:wrap;row-gap:8px}.title-controls span{max-width:46%}
+ .dialogue-footer{flex-wrap:wrap}.dialogue-footer>.button{min-width:0;max-width:100%}
+ .objective h3{font-size:13px}.objective .eyebrow{font-size:8px}
+ .merchant-strip>div{flex:1}.merchant-strip .merchant-budget{font-size:10px}
+ .language-control select{max-width:60%}
+}

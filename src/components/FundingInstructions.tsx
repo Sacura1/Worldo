@@ -1,3 +1,4 @@
+import {useI18n,t} from '../lib/i18n';
 import {Copy} from 'lucide-react';
 
 export type FundingToken={assetId:string;symbol:string;blockchain:string;decimals:number};
@@ -17,13 +18,14 @@ export function fundingInstructions(quote:FundingQuote,tokens:FundingToken[]){
 }
 
 export function FundingInstructions({quote,tokens,onCopyError}:{quote:FundingQuote;tokens:FundingToken[];onCopyError:(message:string)=>void}){
+ useI18n();
  const instructions=fundingInstructions(quote,tokens);
- if(!instructions)return <p role="alert" className="form-error">Payment instructions could not be verified. Request a new quote before sending funds.</p>;
+ if(!instructions)return <p role="alert" className="form-error">{t("Payment instructions could not be verified. Request a new quote before sending funds.")}</p>;
  async function copy(value:string){try{await navigator.clipboard.writeText(value);}catch{onCopyError('Could not copy. Select the value and copy it manually.');}}
  return <>
-  <label className="field-label">SEND EXACTLY<div className="copy-value"><code>{instructions.amount} {instructions.symbol}</code><button type="button" aria-label="Copy payment amount" onClick={()=>void copy(instructions.amount)}><Copy size={16}/></button></div></label>
-  <p className="fine-print">Network: <strong>{instructions.network}</strong>. Use this asset and network for this quote.</p>
-  <label className="field-label">DEPOSIT ADDRESS<div className="copy-value"><code>{instructions.address}</code><button type="button" aria-label="Copy deposit address" onClick={()=>void copy(instructions.address)}><Copy size={16}/></button></div></label>
-  {instructions.memo!==null&&<><label className="field-label">REQUIRED MEMO<div className="copy-value"><code>{instructions.memo}</code><button type="button" aria-label="Copy required memo" onClick={()=>void copy(instructions.memo!)}><Copy size={16}/></button></div></label><p className="fine-print">Include this memo exactly when sending. The address alone is not enough.</p></>}
+  <label className="field-label">{t("SEND EXACTLY")}<div className="copy-value"><code dir="ltr">{instructions.amount} {instructions.symbol}</code><button type="button" aria-label={t("Copy payment amount")} onClick={()=>void copy(instructions.amount)}><Copy size={16}/></button></div></label>
+  <p className="fine-print">{t('Use {asset} on {network} for this quote.',{asset:instructions.symbol,network:instructions.network})}</p>
+  <label className="field-label">{t("DEPOSIT ADDRESS")}<div className="copy-value"><code dir="ltr">{instructions.address}</code><button type="button" aria-label={t("Copy deposit address")} onClick={()=>void copy(instructions.address)}><Copy size={16}/></button></div></label>
+  {instructions.memo!==null&&<><label className="field-label">{t("REQUIRED MEMO")}<div className="copy-value"><code dir="ltr">{instructions.memo}</code><button type="button" aria-label={t("Copy required memo")} onClick={()=>void copy(instructions.memo!)}><Copy size={16}/></button></div></label><p className="fine-print">{t("Include this memo exactly when sending. The address alone is not enough.")}</p></>}
  </>;
 }

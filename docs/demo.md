@@ -27,6 +27,12 @@ Once sign-in works, follow the actual player flow: sign in, activate the wallet 
 
 For a longer demonstration, mine ore and gather timber, process steel and planks, then build a refinery at Riverside Plot using 10 steel and 10 planks. That player refinery processes crude without a business fee.
 
+## Languages and sound
+
+Choose a language from the title screen, or switch it in Settings while playing. Demonstrate a translated resource panel and one short NPC exchange, then let the reply play. The game supports English, French, Spanish, Portuguese, German, Arabic, Hindi, Simplified Chinese, Japanese and Korean. Language changes clear the visible conversation and cancel outstanding audio. Keep monetary amounts and chain account identifiers visible as provided by the game.
+
+Enter the pickup and accelerate to demonstrate the engine changing with speed, then walk to hear footsteps. Show the game-volume slider separately from the NPC voice toggle. Record system audio; the browser must receive an initial click or tap before sound can start.
+
 ## Portrait controls
 
 Show joystick walking, automatic camera following, manual drag to look around, entering a shop and using its panel without horizontal scrolling. The vehicle controls support steering and a separate throttle button.
@@ -47,6 +53,6 @@ An emulated phone viewport verifies layout and inputs; it does not establish fra
 
 Keep the exact commit/build identity, reproducible setup, validation results, actual desktop and portrait screenshots, a recording of the playable loop, and **testnet explorer links** for completed transactions. State that the game is on NEAR testnet. List the unresolved hosted callback and any unconfigured AI, voice or database services plainly; do not label them verified.
 
-The last completed full application run passed 167 tests; final combined checks after the latest changes are pending. See the README for focused and historical evidence rather than combining overlapping test counts.
+The latest full application/API run passed 319 tests. See the README for current provider checks and historical chain evidence; internal browser fixtures do not establish the social-login flow.
 
 Internal development rehearsal remains available through `scripts/preview.mjs` after a client build. Its isolated practice fixture is useful for controls and visuals, but must not be presented as the social-login submission flow.

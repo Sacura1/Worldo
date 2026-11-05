@@ -1,4 +1,5 @@
-export type NpcSpeechRequest={npcId:string;replyId:string;mode:'demo'|'live'};
+import type {Locale} from '../../shared/languages';
+export type NpcSpeechRequest={npcId:string;replyId:string;mode:'demo'|'live';locale?:Locale};
 export type NpcAudioState='idle'|'loading'|'playing';
 type AudioHandle=Pick<HTMLAudioElement,'play'|'pause'|'src'|'onended'|'onerror'>;
 type Dependencies={request:typeof fetch;createAudio:(url:string)=>AudioHandle;createUrl:(blob:Blob)=>string;revokeUrl:(url:string)=>void};
@@ -20,7 +21,7 @@ export class NpcAudioPlayer {
  dispose(){this.stop();this.cached=undefined;}
  async play(body:NpcSpeechRequest){
   this.stop();const generation=this.generation,controller=new AbortController();this.abort=controller;this.onState('loading');
-  const key=`${body.mode}:${body.npcId}:${body.replyId}`;
+  const key=`${body.mode}:${body.npcId}:${body.replyId}:${body.locale??'en'}`;
   try{
    let blob=this.cached?.key===key?this.cached.blob:undefined;
    if(!blob){
