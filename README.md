@@ -1,6 +1,6 @@
 # Worldo
 
-Worldo is a 3D trading game, live on NEAR testnet. Three cities run on the crude oil, rubber, wood and petrol that players gather and deliver. Each city has a mayor with its own treasury who sets prices from the city's stock and explains every decision. Players can build a petrol station and compete with the mayors for drivers. Players sign in with Google or email through NEAR Auth and get a NEAR account with no seed phrase. Trades settle on NEAR in the background, so they never see a wallet prompt or pay gas.
+Worldo is a 3D economy game, live on NEAR testnet. Three cities run on the crude oil, rubber, wood and petrol that players gather and deliver. Each city has a mayor with its own treasury who sets prices from the city's stock and explains every decision. Players can build a petrol station and compete with the mayors for drivers. Players sign in with Google or email through NEAR Auth and get a NEAR account with no seed phrase. Trades settle on NEAR in the background, so they never see a wallet prompt or pay gas.
 
 - Play: https://worldo.world
 - Contract: [`worldo-cities-aecd50.testnet`](https://testnet.nearblocks.io/address/worldo-cities-aecd50.testnet)
@@ -28,7 +28,7 @@ npm ci
 npm run dev:local
 ```
 
-Open http://localhost:3000 and press the play button. The full game runs in a local save. NEAR settlement and NEAR AI need keys, so they are off and mayors use scripted replies. `npm run demo` starts the storm scene from the video, and `npm test` runs the tests. To run it on NEAR testnet with your own accounts, see [docs/near.md](docs/near.md).
+Open http://localhost:3000 and press the play button. The full game runs in a local save. NEAR settlement and NEAR AI need keys, so they are off and mayors use scripted replies. `npm run demo` starts the storm scene from the video, and `npm test` runs the tests. To run it on NEAR testnet with your own accounts, see [docs/worldo.md](docs/worldo.md).
 
 ## How to play
 
