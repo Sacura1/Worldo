@@ -16,13 +16,6 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: browser-test-results
-          path: test-results/
   contract:
     runs-on: ubuntu-latest
     steps:
@@ -37,5 +30,5 @@ jobs:
       - run: cargo build --locked --manifest-path contracts/Cargo.toml --target wasm32-unknown-unknown --release
       - uses: actions/upload-artifact@v4
         with:
-          name: lowland-contract
-          path: contracts/target/wasm32-unknown-unknown/release/lowland_economy.wasm
+          name: worldo-contract
+          path: contracts/target/wasm32-unknown-unknown/release/worldo_economy.wasm

@@ -1,58 +1,207 @@
-import {useI18n,t} from '../lib/i18n';
-import {useCallback,useEffect,useState} from 'react';
-import {ArrowRight,Check,LoaderCircle,RefreshCw,ShieldCheck,Wallet} from 'lucide-react';
-import {request,type ChainAction,type WorldMode} from '../lib/api';
-import {getNearIdentity,loginNear,type NearIdentity} from '../lib/near-auth';
-import {NearIcon} from './Icons';
-import {exactNear} from './MainnetAction';
-import {FundingInstructions,type FundingToken as Token,type FundingQuote as Quote} from './FundingInstructions';
-import type {GameState} from '../../shared/types';
-type Status={productMode:'production'|'development';productionReady:boolean;network:'mainnet'|'testnet';testnetWalletEnabled:boolean;intentsEnabled:boolean;wrappedToken:string;faucetUrl:string|null;authConfigured:boolean;contractConfigured:boolean;liveEnabled:boolean;accountOperationsEnabled:boolean;liveGameplayEnabled?:boolean;walletSetupEnabled?:boolean;relayerConfigured?:boolean;message:string;contractId:string|null};
-type WalletBalance={accountId:string;amount:string;wrappedAmount:string;decimals:number;walletReady:boolean};
-type ContractAccount={balance:string;inventory:string[];refinery:boolean};
-export type ReviewHandler=(action:ChainAction,accountId:string,onConfirmed?:()=>Promise<void>)=>void;
-const amountYocto=(value:string)=>{if(!/^\d+(\.\d{1,24})?$/.test(value))return null;const [whole,fraction='']=value.split('.');return BigInt(whole)*10n**24n+BigInt(fraction.padEnd(24,'0'));};
-const paymentLabels:Record<string,string>={SUCCESS:'Funding complete',PENDING_DEPOSIT:'Waiting for your deposit',KNOWN_DEPOSIT_TX:'Deposit detected',PROCESSING:'Processing swap',INCOMPLETE_DEPOSIT:'Deposit incomplete',REFUNDING:'Refund in progress',REFUNDED:'Refunded',FAILED:'Funding failed'};
-export function Funding({state,onMode,onReview}:{state?:GameState|null;onMode:(mode:WorldMode)=>Promise<void>;onReview:ReviewHandler}){
- const {locale,formatNumber}=useI18n();
- const [status,setStatus]=useState<Status|null>(null),[identity,setIdentity]=useState<NearIdentity|null>(null),[tokens,setTokens]=useState<Token[]>([]),[asset,setAsset]=useState(''),[amount,setAmount]=useState(''),[refund,setRefund]=useState(''),[quote,setQuote]=useState<Quote|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[payment,setPayment]=useState('');
- const [wallet,setWallet]=useState<WalletBalance|null>(null),[account,setAccount]=useState<ContractAccount|null>(null),[accountChecked,setAccountChecked]=useState(false),[paused,setPaused]=useState(false),[gameAmount,setGameAmount]=useState('0.05'),[unwrapAmount,setUnwrapAmount]=useState('');
- const refresh=useCallback(async()=>{const [w,a]=await Promise.allSettled([request<WalletBalance>('/api/near/balance'),request<{account:ContractAccount|null;paused:boolean}>('/api/near/account')]);if(w.status==='fulfilled'){setWallet(w.value);setUnwrapAmount(exactNear(w.value.wrappedAmount||'0'));}if(a.status==='fulfilled'){setAccount(a.value.account);setPaused(a.value.paused);setAccountChecked(true);}},[]);
- useEffect(()=>{let active=true;void Promise.all([request<Status>('/api/near/status'),getNearIdentity()]).then(async([s,i])=>{if(!active)return;setStatus(s);setIdentity(i);if(i)await refresh();if(s.intentsEnabled&&(s.liveEnabled||s.productMode==='development')){const t=await request<{tokens:Token[]}>('/api/intents/tokens');if(active){setTokens(t.tokens);setAsset(t.tokens.find(t=>t.symbol==='USDC')?.assetId||t.tokens[0]?.assetId||'');}}}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[refresh]);
- useEffect(()=>{if(!quote||quote.dry)return;const poll=setInterval(()=>{request<{status:string}>(`/api/intents/status/${quote.id}`).then(r=>{setPayment(r.status);if(r.status==='SUCCESS')void refresh();}).catch(e=>setError(e.message));},5000);return()=>clearInterval(poll);},[quote,refresh]);
- async function login(){setBusy(true);setError('');try{setIdentity(await loginNear(status?.testnetWalletEnabled?'testnet-wallet':'social'));await refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- async function activate(){setBusy(true);setError('');try{await request('/api/near/prepare-wallet',{});await refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- async function checkAvailability(){setBusy(true);setError('');try{setStatus(await request<Status>('/api/near/status'));if(identity)await refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- async function getQuote(){setBusy(true);setError('');setQuote(null);setPayment('');try{setQuote(await request<Quote>('/api/intents/quote',{originAsset:asset,amount,refundTo:refund,slippageBps:100,dry:!(status?.liveEnabled&&identity&&wallet?.walletReady)}));}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- async function enter(mode:WorldMode){setBusy(true);setError('');try{await onMode(mode);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- function reviewAccount(method:'register'|'deposit'|'withdraw'){
-  if(!identity||!status?.contractId)return;const yocto=amountYocto(gameAmount);if(yocto===null||yocto<=0n||yocto>10n**25n){setError('Enter an amount above zero and no more than 10 NEAR.');return;}
-  if(method==='register'&&yocto<10n**22n){setError('Registration needs at least 0.01 NEAR for storage.');return;}
-  if(method!=='withdraw'&&wallet&&yocto>BigInt(wallet.amount)){setError('Your wallet needs more native NEAR. Convert funded wNEAR first.');return;}
-  if(method==='withdraw'&&(!account||yocto>BigInt(account.balance))){setError('This exceeds your game balance.');return;}
-  setError('');onReview({method,args:method==='withdraw'?{amount:yocto.toString()}:{},deposit:method==='withdraw'?'1':yocto.toString(),receiverId:status.contractId,label:method==='register'?`Create game account · ${gameAmount} NEAR (includes 0.01 NEAR storage)`:method==='deposit'?`Add ${gameAmount} NEAR to your game balance`:`Withdraw ${gameAmount} NEAR to your wallet`},identity.accountId,refresh);
- }
- function unwrap(){if(!identity)return;const yocto=amountYocto(unwrapAmount);if(yocto===null||yocto<=0n||!wallet||yocto>BigInt(wallet.wrappedAmount||'0')){setError('Enter an amount within your wNEAR balance.');return;}setError('');onReview({method:'unwrap',args:{amount:yocto.toString()},deposit:'1',receiverId:status?.wrappedToken,label:`Convert ${unwrapAmount} wNEAR to native NEAR (1:1)`},identity.accountId,refresh);}
- const development=status?.productMode==='development',testnet=status?.network==='testnet',networkLabel=testnet?'testnet':'mainnet';
- const live=state?.mode==='live',canEnter=Boolean(status?.liveGameplayEnabled&&identity&&account&&!paused);
- return <div className="panel-body">{(live||development&&state)&&<div className="wallet-practice"><span>{live?t("Game balance"):t("Practice balance")}</span><strong className={live?'near-balance':''}>{live&&<NearIcon/>}{live?exactNear(state?.live?.balanceYocto||'0'):state?formatNumber(state.player.balance):''} <small>{live?'NEAR':'CR'}</small></strong><p>{live?t("Trade, process materials or withdraw to your wallet."):t("Development credits have no monetary value.")}</p></div>}
- <div className="wallet-heading"><NearIcon/><div><h3>{t("Worldo account")}</h3><small>{testnet?t("NEAR testnet · test tokens have no monetary value"):t("Your resources and balance, on NEAR")}</small></div>{identity&&status?.liveGameplayEnabled&&<span className="status-badge enabled">{t("Connected")}</span>}</div>
- {identity?<div className="identity"><Check size={16}/><span><bdi dir="ltr">{identity.accountId}</bdi></span></div>:<button className="button secondary full" disabled={!status?.authConfigured||busy} onClick={login}><Wallet size={17}/>{status?.authConfigured?(development&&status.testnetWalletEnabled?t("Create test wallet"):t("Continue with email or social")):status?t("Sign-in coming soon"):t("Checking availability…")}</button>}
- {identity&&!wallet?.walletReady&&<button className="button secondary full" disabled={busy||!status?.walletSetupEnabled} onClick={activate}>{t("Activate wallet · setup sponsored")}</button>}
- {wallet&&<div className="live-transaction"><div><span>{t("Native NEAR")}</span><b>{exactNear(wallet.amount)}</b></div><div><span>{t("Wrapped NEAR")}</span><b>{exactNear(wallet.wrappedAmount||'0')} wNEAR</b></div><button className="button secondary" disabled={busy} onClick={()=>void refresh()}><RefreshCw size={14}/>{t("Refresh balances")}</button></div>}
- {wallet&&status?.liveEnabled&&BigInt(wallet.wrappedAmount||'0')>0n&&<div className="live-switch"><p>{t("Funding arrives as wNEAR. Convert it 1:1 to native NEAR before adding it to your game account.")}</p><label className="field-label">{t("wNEAR TO CONVERT")}<input dir="ltr" inputMode="decimal" value={unwrapAmount} onChange={e=>setUnwrapAmount(e.target.value)}/></label><button className="button secondary full" disabled={busy} onClick={unwrap}>{t("Review conversion")}</button></div>}
- {identity&&status?.accountOperationsEnabled&&accountChecked&&(account||wallet?.walletReady)&&<div className="live-switch"><p>{account?t('Game account: {amount} NEAR. Funding your wallet does not automatically spend or deposit it.',{amount:exactNear(account.balance)}):t("Create your game account to enter the configured NEAR world. Registration reserves 0.01 NEAR for storage; the rest becomes your game balance.")}</p><label className="field-label">{t("AMOUNT IN NEAR")}<input dir="ltr" inputMode="decimal" value={gameAmount} onChange={e=>setGameAmount(e.target.value)}/></label><button className="button secondary full" disabled={busy||paused} onClick={()=>reviewAccount(account?'deposit':'register')}>{account?t("Review game deposit"):t("Review registration")}</button>{account&&<button className="button secondary full" disabled={busy} onClick={()=>reviewAccount('withdraw')}>{t("Review withdrawal")}</button>}</div>}
- {canEnter&&!live&&<div className="live-switch"><button className="button primary full" disabled={busy} onClick={()=>void enter('live')}><ArrowRight size={17}/>{development?t('Enter {network} world',{network:t(networkLabel)}):t("Enter Worldo")}</button></div>}
- {development&&live&&<button className="button secondary full" disabled={busy} onClick={()=>void enter('demo')}>{t("Return to practice world")}</button>}
- {paused&&<p className="form-error">{t("The chain economy is paused.")}</p>}
- {development&&testnet&&<div className="note"><ShieldCheck size={18}/><p>{t("Test tokens have no monetary value.")} {status?.testnetWalletEnabled?t("This development wallet is stored in this browser; clearing browser data removes access. "):''}{t("Cross-chain deposits are unavailable on testnet.")}</p></div>}
- {error&&<p role="alert" className="form-error">{t(error)}</p>}
- {status?.intentsEnabled&&(development||status.liveEnabled&&identity&&wallet?.walletReady)&&<><p className="muted">{t("Use a supported asset from another chain to fund your own account with wNEAR. Review the quote before sending anything.")}</p>
- <label className="field-label">{t("PAY WITH")}<select value={asset} onChange={e=>{setAsset(e.target.value);setQuote(null);}}><option value="" disabled>{t("Select an asset")}</option>{tokens.map(t=><option key={t.assetId} value={t.assetId}>{t.symbol} · {t.blockchain}</option>)}</select></label>
- <div className="form-row"><label className="field-label">{t("AMOUNT")}<input dir="ltr" inputMode="decimal" placeholder="0.00" value={amount} onChange={e=>{setAmount(e.target.value);setQuote(null);}}/></label><div className="receive-token"><span>{t("RECEIVE")}</span><div><NearIcon/>wNEAR</div></div></div>
- <label className="field-label">{t("REFUND ADDRESS")}<input dir="ltr" placeholder={t("Your address on the sending chain")} value={refund} onChange={e=>{setRefund(e.target.value);setQuote(null);}}/></label><small className="fine-print">{t("Refunds return to this address if the swap cannot complete. Maximum slippage: 1%.")}</small>
- <button className="button primary full" disabled={busy||!asset||!amount||!refund} onClick={getQuote}>{busy?<LoaderCircle className="spin" size={18}/>:<ArrowRight size={18}/>} {status?.liveEnabled&&identity&&wallet?.walletReady?t("Review funding quote"):t("Preview exchange quote")}</button>
- {quote&&<div className="quote-result"><div><span>{t("Estimated received")}</span><strong>{quote.quote.amountOutFormatted||'—'} wNEAR</strong></div><small>{quote.dry?t("Preview only. No payment address has been created."):t("The result is wrapped NEAR in your own wallet.")}</small>{!quote.dry&&<><FundingInstructions quote={quote} tokens={tokens} onCopyError={setError}/>{quote.quote.deadline&&<small>{t("Quote expires:")} {new Date(quote.quote.deadline).toLocaleString(locale)}</small>}<p>{t(payment?paymentLabels[payment]||'Checking swap status…':'Waiting for your deposit')}</p></>}</div>}
- </>}
- <div className="note"><ShieldCheck size={18}/><p>{t(status?.message||'Checking account availability…')}</p></div>{status&&!status.liveGameplayEnabled&&<button className="button secondary full" disabled={busy} onClick={()=>void checkAvailability()}><RefreshCw size={15} className={busy?'spin':''}/>{t("Check again")}</button>}</div>;
+import {useCallback, useEffect, useState} from 'react';
+import {ArrowRight, LoaderCircle, ShieldCheck} from 'lucide-react';
+import {cityRequest} from '../lib/city-api';
+import {useI18n} from '../lib/i18n';
+import {FundingInstructions, type FundingToken, type FundingQuote} from './FundingInstructions';
+
+type FundingStatus = {intentsEnabled: boolean; liveEnabled: boolean; walletSetupEnabled: boolean; message: string};
+const paymentLabels: Record<string, string> = {
+  SUCCESS: 'Funding complete',
+  PENDING_DEPOSIT: 'Waiting for your deposit',
+  KNOWN_DEPOSIT_TX: 'Deposit detected',
+  PROCESSING: 'Processing swap',
+  INCOMPLETE_DEPOSIT: 'Deposit incomplete',
+  REFUNDING: 'Refund in progress',
+  REFUNDED: 'Refunded',
+  FAILED: 'Funding failed',
+};
+/** Optional mainnet wallet funding, entirely separate from the game coin ledger. */
+export function Funding() {
+  const {t, locale} = useI18n();
+  const [status, setStatus] = useState<FundingStatus | null>(null),
+    [walletReady, setWalletReady] = useState(false),
+    [tokens, setTokens] = useState<FundingToken[]>([]),
+    [asset, setAsset] = useState(''),
+    [amount, setAmount] = useState(''),
+    [refund, setRefund] = useState(''),
+    [quote, setQuote] = useState<FundingQuote | null>(null),
+    [payment, setPayment] = useState(''),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(''),
+    [now, setNow] = useState(Date.now());
+  // Funding explicitly checks the chain and sponsor; ordinary sign-in does not
+  // wait for these sequential read-only probes. Cancellation still closes this load.
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const s = await cityRequest<FundingStatus>('/api/near/status?readiness=1', undefined, signal, 60000);
+    setStatus(s);
+    if (!s.intentsEnabled || !s.liveEnabled) return;
+    const wallet = await cityRequest<{walletReady: boolean}>('/api/near/balance', undefined, signal);
+    setWalletReady(wallet.walletReady);
+    if (wallet.walletReady) {
+      const list = await cityRequest<{tokens: FundingToken[]}>('/api/intents/tokens', undefined, signal);
+      setTokens(list.tokens);
+      setAsset(
+        current =>
+          current || list.tokens.find(token => token.symbol === 'USDC')?.assetId || list.tokens[0]?.assetId || '',
+      );
+    }
+  }, []);
+  useEffect(() => {
+    const abort = new AbortController();
+    void load(abort.signal).catch(e => {
+      if (!abort.signal.aborted) setError(e.message);
+    });
+    return () => abort.abort();
+  }, [load]);
+  useEffect(() => {
+    if (!quote || quote.dry) return;
+    const abort = new AbortController();
+    let working = false;
+    const timer = setInterval(() => {
+      setNow(Date.now());
+      if (working || ['SUCCESS', 'REFUNDED', 'FAILED'].includes(payment)) return;
+      working = true;
+      void cityRequest<{status: string}>(`/api/intents/status/${quote.id}`, undefined, abort.signal)
+        .then(result => setPayment(result.status))
+        .catch(e => {
+          if (!abort.signal.aborted) setError(e.message);
+        })
+        .finally(() => {
+          working = false;
+        });
+    }, 5000);
+    return () => {
+      clearInterval(timer);
+      abort.abort();
+    };
+  }, [quote, payment]);
+  async function prepare() {
+    setBusy(true);
+    setError('');
+    try {
+      await cityRequest('/api/near/prepare-wallet', {});
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function getQuote() {
+    setBusy(true);
+    setError('');
+    setQuote(null);
+    setPayment('');
+    try {
+      const next = await cityRequest<FundingQuote>('/api/intents/quote', {
+        originAsset: asset,
+        amount,
+        refundTo: refund,
+        slippageBps: 100,
+        dry: false,
+      });
+      setQuote(next);
+      setNow(Date.now());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const enabled = status?.intentsEnabled && status.liveEnabled && walletReady,
+    expired = !!quote?.quote.deadline && Date.parse(quote.quote.deadline) <= now;
+  return (
+    <div className="funding-panel">
+      <p>{t('Optional wallet funding. This does not buy Worldo coins.')}</p>
+      <p>
+        {t(
+          'Use a supported asset from another chain to fund your own account with wNEAR. Review the quote before sending anything.',
+        )}
+      </p>
+      {!enabled && <p role="status">{t(status?.message || 'Checking account availability…')}</p>}
+      {status?.intentsEnabled && status.liveEnabled && !walletReady && (
+        <button className="button" disabled={busy || !status.walletSetupEnabled} onClick={() => void prepare()}>
+          {t('Activate wallet · setup sponsored')}
+        </button>
+      )}
+      {enabled && (
+        <>
+          <label>
+            {t('PAY WITH')}
+            <select
+              value={asset}
+              onChange={e => {
+                setAsset(e.target.value);
+                setQuote(null);
+              }}
+            >
+              {tokens.map(token => (
+                <option key={token.assetId} value={token.assetId}>
+                  {token.symbol} · {token.blockchain}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t('AMOUNT')}
+            <input
+              dir="ltr"
+              inputMode="decimal"
+              value={amount}
+              onChange={e => {
+                setAmount(e.target.value);
+                setQuote(null);
+              }}
+              placeholder="0.00"
+            />
+          </label>
+          <label>
+            {t('REFUND ADDRESS')}
+            <input
+              dir="ltr"
+              value={refund}
+              onChange={e => {
+                setRefund(e.target.value);
+                setQuote(null);
+              }}
+              placeholder={t('Your address on the sending chain')}
+            />
+          </label>
+          <small>{t('Refunds return to this address if the swap cannot complete. Maximum slippage: 1%.')}</small>
+          <button
+            className="button primary"
+            disabled={busy || !asset || !amount || !refund}
+            onClick={() => void getQuote()}
+          >
+            {busy ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />} {t('Review funding quote')}
+          </button>
+        </>
+      )}
+      {quote && (
+        <section className="funding-quote">
+          <div>
+            {t('Estimated received')} <strong>{quote.quote.amountOutFormatted || '—'} wNEAR</strong>
+          </div>
+          <p>{t('The result is wrapped NEAR in your own wallet.')}</p>
+          {expired ? (
+            <p>{t('This quote has expired.')}</p>
+          ) : (
+            <FundingInstructions quote={quote} tokens={tokens} onCopyError={setError} />
+          )}
+          <small>
+            {t('Quote expires:')} {quote.quote.deadline ? new Date(quote.quote.deadline).toLocaleString(locale) : '—'}
+          </small>
+          <p role="status">{t(paymentLabels[payment] || 'Waiting for your deposit')}</p>
+        </section>
+      )}
+      {error && (
+        <p className="inline-error" role="alert">
+          {t(error)}
+        </p>
+      )}
+      <small>
+        <ShieldCheck size={14} /> NEAR Intents · 1Click
+      </small>
+    </div>
+  );
 }

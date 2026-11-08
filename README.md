@@ -1,172 +1,77 @@
 # Worldo
 
-A third-person game about supplying a small industrial town. Explore on foot, drive deliveries, find crude oil, mine iron ore, gather timber, and turn those resources into useful goods. Shops have finite stock and budgets; their offers change as players trade.
+Worldo is a 3D trading game, live on NEAR testnet. Three cities run on the crude oil, rubber, wood and petrol that players gather and deliver. Each city has a mayor with its own treasury who sets prices from the city's stock and explains every decision. Players can build a petrol station and compete with the mayors for drivers. Players sign in with Google or email through NEAR Auth and get a NEAR account with no seed phrase. Trades settle on NEAR in the background, so they never see a wallet prompt or pay gas.
 
-Built for NEAR Hackathon’s **Games With Real Economies** track. Desktop and portrait touch controls share the world. [Walkthrough](docs/demo.md) · [NEAR configuration](docs/near.md)
+- Play: https://worldo.world
+- Contract: [`worldo-cities-aecd50.testnet`](https://testnet.nearblocks.io/address/worldo-cities-aecd50.testnet)
 
-**[Worldo on Fly](https://worldo.world/)**. The submission release targets **NEAR testnet with social sign-in**. Testnet transactions use test NEAR with no monetary value; no real funds are required. Players use the normal account and game flow, without a public practice mode or disposable browser wallet.
+## The problem
 
-The latest audio and ten-language update is verified in the local build. Its 5 November deployment attempt failed because this machine could not resolve Fly’s API/build-service hostnames; the hosted release has not received this update. [Validation scope](docs/game-validation.json).
+Most blockchain games start from the token. Players meet wallets and gas prompts before they play, and the economy only changes when the developers patch it. In Worldo the economy is the game: shortages, prices and competition drive play, and NEAR stays in the background.
 
-**Sign-in is not yet verified on Fly.** A read-only authorization probe on 4 November 2026 found that the official shared testnet client accepts `http://localhost:3000`, but rejects `https://worldo.world`, the legacy Fly origin and `http://localhost:5173` with a callback mismatch. The hosted origin needs an allowed callback configuration. Issuer metadata is reachable, but neither that check nor the localhost probe proves a completed social login. Localhost on port 3000 is the supported route for the next sign-in verification.
+## Try it
 
-## Testnet submission setup
+| Do this | See this |
+| --- | --- |
+| Open https://worldo.world and press **Create account & play** | Sign in with Google or email through NEAR Auth and approve once. You get a NEAR account with no seed phrase, and no wallet pop-ups after that. |
+| Follow the step tracker at the top. Walk to the gold beam at the Oil Field and hold **E** next to a pump | Crude oil goes into your cart while you hold the key. |
+| Carry it into the Refinery Exchange, open the door with **E** and talk to Hale with **E** | The mayor answers from the city's live numbers. |
+| Choose **Browse goods & services** and sell your crude | The quote shows the price, the reason for it, how far your order moves it, and the mayor's latest decision. |
+| Click your coins at the top right, then **View latest transaction** | NearBlocks shows the batch holding real game activity. Allow a minute or two for it to settle. |
+| Open settings (gear icon, top right) and pick another language | The whole interface switches language. |
+| Open https://worldo.world/?ff=1 and press **Run** | A game week plays in about a minute, and fuel, prices and market share move on the chart. |
 
-Requires Node.js 24 and npm.
+To run it on your own computer, you need Node.js 24 and no keys:
 
-1. Copy `.env.example` to ignored `.env`. Set `APP_MODE=production`, `NEAR_NETWORK=testnet`, `NEAR_AUTH_MODE=social`, `ENABLE_TESTNET=true` and `ENABLE_MAINNET=false`. Production mode selects the player-facing experience; it does not imply mainnet.
-2. Configure the deployed **testnet** game contract, four registered merchant accounts, and oracle and relayer accounts funded with test tokens. Configure the verified NEAR Auth signing deposit and a daily sponsorship budget. Social signing still uses the signing service; it is different from the historical browser test-wallet path.
-3. Use NEAR Auth configuration approved for the exact app origin. The official shared testnet configuration supports the localhost callback described above; it does not authorize arbitrary hosted origins.
-4. For the single-machine Fly testnet deployment, set `TESTNET_SINGLE_PROCESS=true` and `LOCAL_DATA_DIR` to the mounted persistent volume. Neon is optional for this testnet configuration. Supply a pooled TLS `DATABASE_URL` when using Neon; it is required for a future mainnet deployment.
-5. Supply `NEAR_AI_API_KEY` for generated conversations and `ELEVENLABS_API_KEY` plus account voice IDs for speech when those services are ready. Their absence leaves shops usable and labels dialogue or voice unavailable.
-6. Run `npm ci`, `npm test` and `npm run build`. For local social-login verification, use `PUBLIC_URL=http://localhost:3000` and run `npm run dev` or the built app with `npm start`. Open **localhost:3000**, not port 5173 or a different hostname.
+```sh
+npm ci
+npm run dev:local
+```
 
-On Fly, set `PUBLIC_URL=https://worldo.world` and register that exact origin with NEAR Auth before claiming hosted sign-in works. `APP_ORIGIN`, if set, must agree. Keep credentials on the server; never use a `VITE_` variable for secrets. Local HTTP is allowed only for loopback testnet development; hosted origins use HTTPS.
+Open http://localhost:3000 and press the play button. The full game runs in a local save. NEAR settlement and NEAR AI need keys, so they are off and mayors use scripted replies. `npm run demo` starts the storm scene from the video, and `npm test` runs the tests. To run it on NEAR testnet with your own accounts, see [docs/near.md](docs/near.md).
 
-`/api/near/readiness` reports configuration and bounded storage, issuer and chain checks without secret values. Checks include the selected RPC network, contract views, merchant accounts, operator keys and funding; Neon checks perform a write/read/cleanup. Testnet may use the explicitly configured single-machine volume instead. Successful social login and signing require an actual user verification, including callback acceptance. `/api/health` is a service health check, not proof that account entry or transactions work.
+## How to play
 
-Missing credentials produce an unavailable sign-in or service message. They never activate a fake transaction, canned AI answer or development wallet. Mainnet remains disabled for this submission.
+1. Gather crude oil, rubber and wood with your starter tools.
+2. Sell crude to Refinery City, and rubber and wood to Motor and Harbor City.
+3. Buy petrol at the Refinery and carry it to cities that need it. Better tools and vehicles come from Motor City.
+4. Buy a station plot for 300 coins, pay the 40-coin build fee and deliver 40 wood.
+5. Stock the tank with petrol, set a pump price and repair the hoses with rubber. Drivers keep buying while you are away.
 
-## One codebase, two network profiles
+W and S walk, A and D turn (the arrow keys work too), and dragging looks around. **E** opens doors and talks, and holding it gathers. **F** enters a vehicle, **M** opens the map and **I** opens your cargo.
 
-The demo runs at **http://localhost:3000 against public NEAR testnet**. Localhost
-is the shared social-login application's accepted callback, not a private
-blockchain. Mainnet uses the same game and contract source with its own deployment.
+## What's in the game
 
-- Copy `config/testnet.env.example` to ignored `.env.testnet`, supply the testnet
-  accounts, and run `npm run build` then `npm run start:testnet`.
-- Copy `config/mainnet.env.example` to ignored `.env.mainnet`. After mainnet Auth
-  approval, configure its exact callback, deploy and initialize the game contract,
-  fund the mainnet operators/merchants and supply a separate Neon database or
-  branch. Verify the MPC signing deposit, then set `ENABLE_MAINNET=true` and run
-  `npm run start:mainnet` on the approved HTTPS origin.
+| Feature | Code |
+| --- | --- |
+| Simple social login: sign in with Google or email through NEAR Auth, with no seed phrase | [near-login.ts](server/near-login.ts) |
+| Each mayor is a NEAR account with its own coins and goods | `account` and `apply_batch` in [lib.rs](contracts/src/lib.rs) |
+| Mayors set wages, bounties and fuel reserves with NEAR AI, within fixed limits. Each decision and its reason goes on chain | [mayor-council.ts](server/mayor-council.ts), [mayorPolicy.ts](server/economy/mayorPolicy.ts) |
+| Talk to the mayors in your own language, with ElevenLabs voices | [npc.ts](server/npc.ts), [npc-providers.ts](server/npc-providers.ts) |
+| Player-owned petrol stations compete with the mayors for drivers | [stations.ts](server/economy/stations.ts), [driverChoice.ts](server/economy/driverChoice.ts) |
+| Storms, refinery faults, festivals, oil booms and cold snaps hit the economy on their own | [citySim.ts](server/economy/citySim.ts), [events.ts](shared/config/events.ts) |
+| Prices follow stock, explain themselves, and move as large orders fill | [pricingRules.ts](server/economy/pricingRules.ts) |
+| Supply contracts lock in a price for daily deliveries | [contracts.ts](server/economy/contracts.ts) |
+| Reputation moves a player's prices by up to 10% | [reputation.ts](server/economy/reputation.ts) |
+| A simulated week in a minute at `/?ff=1` | [preview.ts](server/economy/preview.ts) |
+| Ten languages | [languages.ts](shared/languages.ts) |
+| No wallet pop-ups or gas. A sponsored worker settles actions in batches | [city-controller.ts](server/city-controller.ts), [relayer.ts](server/relayer.ts) |
+| Coins, goods, equipment and station deeds are NEP-245 tokens in one contract | [lib.rs](contracts/src/lib.rs) |
 
-The profile launch commands read only the selected file and discard inherited
-application settings, so a shell's old RPC, credentials or database cannot override
-the profile. They require social login and the normal production game flow.
-Restart to change profiles; no frontend rebuild is needed just for runtime network
-configuration. `npm start` remains compatible with the existing generic `.env`.
-Fly uses runtime secrets rather than these local files; see the
-[activation instructions](docs/near.md#network-profiles-and-mainnet-activation).
+## How NEAR is used
 
-Only empty templates are tracked. Private keys, API keys and database passwords
-belong in ignored local files or Fly secrets. Auth client IDs are public application
-identifiers, not secret keys; the official shared testnet ID is documented in code.
-Mainnet cannot be called end-to-end verified until real approved login, signing and
-settlement succeed. Intents remains mainnet-only and is not demonstrated as a
-completed swap in the local testnet video.
+- **Accounts.** NEAR Auth gives each player a NEAR account from a Google or email login, with no seed phrase.
+- **Permission.** A player approves one grant with `authorize_game`. It lasts 30 days, caps coin spending at 100,000 and cannot move native NEAR or any other asset.
+- **No gas for players.** NEP-366 delegate actions let a sponsor pay.
+- **Settlement.** Actions apply in the game at once and join a queue. A worker sends ordered batches to `apply_batch`, signed by all three mayor keys, which the game server holds. The contract checks batch order, player nonces, grant limits and that the coin supply never changes.
 
-Live saves and oracle journals are scoped to network, contract and account.
-The contract-scoped format starts fresh local progress rather than importing
-legacy saves whose original contract cannot be established. Legacy rows remain
-untouched; on-chain balances, inventory and refinery ownership are reloaded.
-Reconcile any legacy pending grants against their original contract before
-migrating a live deployment. Keep one app instance: login sessions and sponsor
-transaction locks are currently held in-process.
+## Testnet transactions
 
-## The game
+- [Contract deployment](https://testnet.nearblocks.io/txns/2iJdmZfuaStiPmMahWWFxkhL698Ai9vCHGKcmc9WjhGg)
+- [Sponsored permission grant](https://testnet.nearblocks.io/txns/GK8urtjaSsGeVXv8tZGjDf7FxeMxMxxz4oh7D5CkXNCF)
+- [A mayor trade with its `mayor_decisions` event](https://testnet.nearblocks.io/txns/HQAdGwzzDqSispjpsfLCTZ3PWS5sLnmdRAGMaYVD6mNe)
+- [Permission revocation](https://testnet.nearblocks.io/txns/3fiMFzvpgMFvyae1uwgpx9xGBKbWaupB18UBzvqq8g6V)
 
-| Gather | Process into | Use |
-| --- | --- | --- |
-| Crude oil | Petrol | Refuel the pickup |
-| Iron ore | Steel | Build a player refinery |
-| Timber | Planks | Build a player refinery |
+## Built with
 
-Processing uses two raw units per finished product. On the submission network, the contract charges **0.001 test NEAR per batch** at a business. The scanner is a free equipment loan; a player refinery costs **10 steel and 10 planks** and processes crude into petrol without a business fee.
-
-Survey North Ridge, follow directional readings and find the hidden oil deposit. Surveying uses 3 energy; collecting uses 6 energy with a three-second cooldown. Each collection yields up to two units. Rest at the depot restores energy.
-
-On-foot cargo holds 12 units; the pickup holds 40, including when parked within reach. Driving consumes fuel. One petrol can restores up to 25 fuel.
-
-Selling transfers test NEAR from the merchant’s existing game balance to the player. Buying and processing transfer it back. Trades change stock, which changes subsequent offers; buying and selling have a spread. The price board shows **what the named merchant pays for one unit** and refreshes every 20 seconds while open. Its arrows compare with arrival prices. The release identifies the selected testnet network; these are game goods and test-token balances, not real commodity prices or earnings.
-
-Conversation does not execute trades or create resources. The player reviews economic transactions before signing. The chain-backed game does not currently run the development world's daily autonomous NPC production cycle.
-
-## The town and controls
-
-Eight buildings have doors and interiors. Open a door, walk in and talk to the shopkeeper. The supply shop, refinery, sawmill and foundry have different staff and furnishings. The filling station has pumps and an attendant. Residents follow separate walking and working routines; sellers move their heads and hands while idle.
-
-Buildings, furniture, trees, rocks, fences, parked vehicles and people have collision handling. The camera follows the character’s travel direction and adjusts around walls, ceilings and doorways. Drag to look around manually. The character turns to walk back; held movement retains its initial reference direction so camera following cannot steer it into a circle.
-
-| Action | Desktop | Portrait touch |
-| --- | --- | --- |
-| Walk | W/A/S/D or arrows | Joystick |
-| Drive / reverse | W/S or up/down | Joystick forward/back; throttle button |
-| Steer | A/D or left/right | Joystick left/right |
-| Run | Hold Shift | — |
-| Look around | Drag the world | Drag the world |
-| Doors / talk / interact | E | Interact button |
-| Enter / leave pickup | F | Vehicle button |
-| Material guides | 1 / 2 / 3 | Crude, ore and timber shortcuts |
-| Map / all cargo | M / I | Minimap / backpack |
-| Close panel | Escape | Close button |
-
-Each material shortcut shows its gathering site, recipe, use and route. The backpack shows all cargo. Map markers set a route rather than teleporting. Panels pause movement.
-
-## Languages and game audio
-
-Choose English, French, Spanish, Portuguese, German, Arabic, Hindi, Simplified Chinese, Japanese or Korean on the title screen or in Settings. The preference survives reloads. Menus, resource guidance, world signs, economic messages and NPC introductions use bundled catalogs; generated conversations and speech request the selected language. Changing languages cancels outstanding dialogue and voice and starts a separate conversation. Arabic uses right-to-left text; world controls, account IDs and payment data keep their original direction and values. Arabic and Devanagari fonts are bundled locally; CJK text uses the device’s installed fonts.
-
-Game audio starts after a click, tap or keypress, as browsers require. The pickup has speed/load-responsive engine sound; walking has movement-linked footsteps. Town ambience, doors, gathering, processing, trading and refuelling have local Web Audio effects. Settings saves game mute and volume. Audio pauses with gameplay or a hidden tab and lowers under NPC speech. NPC voice has a separate control. These game sounds do not call an external service.
-
-## NPC conversations and voice
-
-NEAR AI Cloud generates responses from each character’s role, current player state, inventory, merchant budget and quotes. Conversation history is server-owned. Chat cannot grant items, alter prices or move money.
-
-Conversation context is kept in server memory only: the last six messages per
-browser session, signed-in account and NPC. This lets residents understand
-follow-up questions. Message text is not written to Neon, game-save files or the
-blockchain. Neon/file usage records contain daily provider request/character
-counts, not conversations. Context older than 30 minutes and speech replies older
-than 10 minutes are removed on later chat/speech requests; these are reuse limits,
-not a timed deletion guarantee. Server restart clears the caches; logout currently
-does not explicitly erase them. The browser keeps displayed messages in component
-memory and clears them when the dialogue closes or the page reloads.
-
-NEAR AI's private inference guarantees apply to its TEE-hosted models. Worldo's
-backend still receives the message and sends the relevant context over HTTPS; it
-does not independently verify inference attestations or hide text from the game
-server. Optional ElevenLabs speech sends the generated reply to that separate
-provider. Do not describe the complete game chat flow as end-to-end private.
-
-ElevenLabs voices the generated reply using a server-configured voice for each character, or the shared fallback voice ID. No microphone is used. Closing dialogue or starting another reply cancels previous audio; browsers that block autoplay show a Listen button. Device speech synthesis is not used.
-
-Without a configured provider, the UI labels conversation or voice unavailable. Shops remain usable. Initial greetings are authored introductions, not claimed AI output.
-
-Default daily provider caps are 100 responses and 10,000 speech characters. Explicit zero disables that provider. Durable usage reservations, per-session limits, bounded input and session-bound reply IDs constrain requests. Provider calls can incur charges. See .env.example for keys, model and voice configuration.
-
-## NEAR, Intents and persistence
-
-- **Game contract:** test NEAR balances and six resource inventories on NEAR testnet, with NEP-245 core multi-token operations. Optional extensions and limitations are listed in [docs/near.md](docs/near.md).
-- **Social login:** NEAR Auth is the public account flow. Hosted callback configuration and an actual social-signing test are still required. Economic actions require signature approval; fully invisible blockchain interactions are not claimed.
-- **NEAR Intents:** unavailable on testnet. The retained mainnet adapter supports 1Click funding from supported chains into the player's own wNEAR, followed by separately reviewed unwrap and game-deposit steps. It is not part of the playable testnet walkthrough, and no mainnet settlement is claimed.
-- **Persistence:** the single-machine Fly testnet configuration uses its mounted volume for durable account-linked saves and operator journals. Keep `TESTNET_SINGLE_PROCESS=true` and do not scale this file-storage configuration to multiple machines. Neon support is implemented for shared durable records and future mainnet deployment; a read-only connection check passed for both configured local profiles on 5 November 2026. Starting the real local testnet app also passed its storage write/read/cleanup readiness probe. Hosted Neon migration and an account-linked save through the social-login flow remain separate checks. Schema initialization is handled server-side; migrations are in `migrations/`.
-- **Fly:** serves the built client and API on one origin. Runtime secrets belong in Fly secrets. The legacy `lowland-near` hosting identifier is retained; the game’s visible name is Worldo.
-
-Harvest grants are validated by the gameplay server and reconciled with the contract. The oracle cannot mint NEAR. Pending resource transactions block further economic actions until confirmation. NPC purchasing budgets must be funded with test tokens; selling does not create new currency.
-
-Mainnet remains a later operator setup: approved mainnet Auth configuration, deployed and funded mainnet accounts, verified Neon persistence and explicit mainnet enablement. Testnet balances and saved progress do not become real funds when that configuration changes.
-
-## Validation
-
-npm test runs application/API regressions; npm run build checks TypeScript and builds the client. The Dockerfile also runs the Rust contract suite and compiles WASM before packaging.
-
-For isolated internal browser checks, `node scripts/preview.mjs` serves a development fixture on localhost:3000. It explicitly uses `APP_MODE=development` and separate `.local/e2e` saves. This fixture is not the public account flow. `npm run test:e2e` uses desktop and portrait emulation; practice scenarios require that isolated fixture, not the public social-login release.
-
-The current application/API suite contains **319 passing tests**, including translation coverage and placeholders, locale-bound NPC replies, payment-data preservation and audio lifecycle checks. The production TypeScript/client build passes. The language matrix passed 560 desktop/portrait view checks, followed by 140 checks of corrected wording and 12 small-screen settings checks. A delayed NPC reply stayed out after a language switch. Sixteen real-browser audio checks passed using Chromium’s native silent sink, including engine pitch, footsteps, muted/paused output, persisted preferences and merchant feedback. These layout/audio checks are not a physical-phone performance benchmark or a speaker/listening review. See [the validation record](docs/game-validation.json). Network profile checks cover inherited credentials, mixed networks and deployment-scoped saves, including live NPC chat and speech. Camera entry/turn/exit and UI checks cover desktop and portrait layouts. A deliberately throttled 112-frame rendering check reproduced three cleared frames before the resize fix and zero afterward. The local testnet social-login popup was opened and inspected (email, Google and passkey options); no credentials were entered and a completed social login/signature is still unverified.
-
-Earlier verification on 4 November 2026 covered six desktop/portrait practice scenarios and a real testnet sequence: registration, deposit, reload, quarry harvest, foundry processing and sale. It verified the 0.001 test NEAR fee, canonical inventory, conserved balances and sponsored signing. [Historical testnet receipts](docs/testnet-validation.json) preserve that evidence. That transaction test used a development browser wallet; it does not prove the current social-login flow or the latest camera behavior.
-
-[Provider validation evidence](docs/language-validation.json) records the scope and counts. Provider mocks verify error handling and authorization. On 5 November 2026, bounded live checks generated NEAR AI replies in all ten supported languages and obtained ElevenLabs audio in each language plus the other four character voices. Two inaccurate economic explanations found during that check led to stricter per-batch fee and recipe instructions; repeat replies correctly described those rules. AI responses are generated and can still be inaccurate; only the authoritative trade panels execute actions. Hosted and local social sign-in and Intents settlement remain separate unverified end-to-end checks.
-
-## Visuals and limits
-
-Three.js renders procedural geometry, batched static meshes, bounded shadows and adaptive resolution. Barlow Condensed, IBM Plex Sans, Noto Sans Arabic and Noto Sans Devanagari are bundled locally, with their licenses in `public/licenses/`. Icons are Lucide; NEAR artwork attribution is in public/brand/README.md. The Worldo logo and generation provenance are in public/brand/.
-
-This is a compact exploration and production game, not a multiplayer simulation. Browser viewport emulation does not establish frame rate on physical phones; real devices still need measurement.
-
-## NEAR Auth application
-
-Use the [official testnet configuration](https://docs.auth.near.org/resources/testnet) for the supported localhost verification. For hosted social login, request the exact Fly callback, logout and web origin configuration from [NEAR Auth](https://docs.auth.near.org/home/apply), using **Worldo** as the application name and stating that this submission runs on testnet. Describe player-owned resources and funded NPC trading; cross-chain funding is retained for a future mainnet release. Setting an origin in `.env` does not register it with the provider.
-
-Account operations are checked separately from gameplay: an unavailable merchant or harvest oracle does not prevent an otherwise valid withdrawal. Auth, network, contract, durable storage, release and relayer checks still apply.
+Three.js, React, TypeScript, Vite, Express, Neon PostgreSQL, Rust with near-sdk, near-api-js, NEAR Auth, NEAR AI Cloud, ElevenLabs and Fly.io, with help from AI coding tools including Claude Code and Codex.

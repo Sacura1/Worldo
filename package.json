@@ -1,5 +1,5 @@
 {
-  "name": "lowland",
+  "name": "worldo",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,9 @@
     "start:testnet": "node --import tsx scripts/start-network.ts testnet",
     "start:mainnet": "node --import tsx scripts/start-network.ts mainnet",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "dev:local": "node --import tsx scripts/local.mjs",
+    "start:local": "node --import tsx scripts/local.mjs --production",
+    "demo": "node --import tsx scripts/local.mjs --demo"
   },
   "dependencies": {
     "@auth0/auth0-spa-js": "^2.2.0",

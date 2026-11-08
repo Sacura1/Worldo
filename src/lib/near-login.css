@@ -1,0 +1,38 @@
+.near-login-result {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #18222b;
+  color: #f4ead8;
+  font-family: 'IBM Plex Sans', sans-serif;
+  box-sizing: border-box;
+}
+.near-login-result section {
+  width: min(100%, 360px);
+  padding: 32px;
+  border: 1px solid #9c8355;
+  border-radius: 18px;
+  background: #25323c;
+  box-sizing: border-box;
+  box-shadow: 0 16px 60px #0005;
+}
+.near-login-result h1 {
+  margin: 0 0 24px;
+  font:
+    600 40px 'Barlow Condensed',
+    sans-serif;
+  letter-spacing: 0.08em;
+  color: #f4ca77;
+}
+.near-login-result p {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.near-login-result a {
+  display: inline-block;
+  margin-top: 16px;
+  color: #f4ca77;
+  text-underline-offset: 5px;
+}

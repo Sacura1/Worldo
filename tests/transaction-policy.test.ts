@@ -1,58 +1,71 @@
-import {afterEach,describe,expect,it,vi} from 'vitest';
+import {afterEach, describe, expect, it, vi} from 'vitest';
 import {createHash} from 'node:crypto';
 import {KeyPair} from '@near-js/crypto';
-import {actionCreators,buildDelegateAction,encodeTransaction} from '@near-js/transactions';
+import {actionCreators, buildDelegateAction, encodeTransaction} from '@near-js/transactions';
 import bs58 from 'bs58';
-import {ACTION_GAS,actionCost,assertSponsoredDelegate,checkReviewedFee,prepareGameTransaction} from '../server/transaction-policy';
-import {assembleUserSignedTransaction,submitSponsoredDelegate} from '../server/relayer';
-
-const player=KeyPair.fromRandom('ed25519'),operator=KeyPair.fromRandom('ed25519');
-const input={accountId:'player.near',publicKey:player.getPublicKey().toString(),contractId:'game.near',args:{},access:{nonce:10,block_height:100,block_hash:bs58.encode(new Uint8Array(32))}};
-const forcedDelegate=(method:string,deposit:bigint,receiverId='game.near')=>buildDelegateAction({senderId:'player.near',receiverId,publicKey:player.getPublicKey(),nonce:11n,maxBlockHeight:400n,actions:[actionCreators.functionCall(method,Buffer.from('{}'),ACTION_GAS,deposit)]});
-afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
-
-describe('player principal never comes from the sponsor',()=>{
- it.each(['register','deposit'])('%s constructs an ordinary transaction signed by the player',method=>{
-  const deposit=10n**24n,prepared=prepareGameTransaction({...input,method,deposit:deposit.toString()});
-  expect(prepared.kind).toBe('transaction');if(prepared.kind!=='transaction')throw Error('Unsafe funding path');
-  expect(prepared.transaction.signerId).toBe('player.near');expect(prepared.transaction.publicKey.toString()).toBe(player.getPublicKey().toString());expect(prepared.transaction.receiverId).toBe('game.near');
-  expect(prepared.transaction.actions).toHaveLength(1);expect(prepared.transaction.actions[0].enum).toBe('functionCall');expect(prepared.transaction.actions[0].functionCall?.deposit).toBe(deposit);
-  expect(prepared.bytes).toEqual(Buffer.from(encodeTransaction(prepared.transaction)));
- });
- it('even a one-yocto game deposit cannot turn sponsorship into a credited player balance',()=>{
-  expect(prepareGameTransaction({...input,method:'deposit',deposit:'1'}).kind).toBe('transaction');
-  expect(()=>assertSponsoredDelegate(forcedDelegate('deposit',1n),'game.near')).toThrow('cannot use sponsored');
- });
- it('sponsor rejects material deposits at broadcast boundary before any network call',async()=>{
-  const fetch=vi.spyOn(globalThis,'fetch');
-  await expect(submitSponsoredDelegate(forcedDelegate('deposit',10n**24n),'irrelevant')).rejects.toThrow('one-yocto');
-  expect(fetch).not.toHaveBeenCalled();
- });
- it('keeps only one-yocto approved game calls delegated',()=>{
-  const prepared=prepareGameTransaction({...input,method:'trade',deposit:'1'});expect(prepared.kind).toBe('delegateAction');
-  if(prepared.kind!=='delegateAction')throw Error('Expected sponsored call');expect(assertSponsoredDelegate(prepared.delegate,'game.near')).toBe(1n);
-  expect(()=>assertSponsoredDelegate(forcedDelegate('trade',1n,'another.near'),'game.near')).toThrow('cannot use sponsored');
-  expect(()=>assertSponsoredDelegate(forcedDelegate('trade',2n),'game.near')).toThrow('one-yocto');
- });
- it('verifies the native transaction against the player key, never the operator key',()=>{
-  const prepared=prepareGameTransaction({...input,method:'deposit',deposit:(10n**24n).toString()});if(prepared.kind!=='transaction')throw Error('Unsafe funding path');
-  const hash=createHash('sha256').update(prepared.bytes).digest();
-  const payload=(key:typeof player)=>Buffer.from(JSON.stringify({signature:[...key.sign(hash).signature]})).toString('base64');
-  const signed=assembleUserSignedTransaction(prepared.transaction,payload(player));expect(signed.transaction.signerId).toBe('player.near');
-  expect(()=>assembleUserSignedTransaction(prepared.transaction,payload(operator))).toThrow('does not match the player');
- });
+import {ACTION_GAS, assertSponsoredDelegate, prepareGameTransaction} from '../server/transaction-policy';
+import {assembleUserSignedTransaction, submitSponsoredDelegate} from '../server/relayer';
+const player = KeyPair.fromRandom('ed25519'),
+  other = KeyPair.fromRandom('ed25519');
+const input = {
+  accountId: 'player.testnet',
+  publicKey: player.getPublicKey().toString(),
+  contractId: 'worldo.testnet',
+  args: {},
+  access: {nonce: 10, block_height: 100, block_hash: bs58.encode(new Uint8Array(32))},
+};
+const delegate = (method: string, deposit = 0n, senderId = 'player.testnet', receiverId = 'worldo.testnet') =>
+  buildDelegateAction({
+    senderId,
+    receiverId,
+    publicKey: player.getPublicKey(),
+    nonce: 11n,
+    maxBlockHeight: 400n,
+    actions: [actionCreators.functionCall(method, Buffer.from('{}'), ACTION_GAS, deposit)],
+  });
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
-
-describe('network cost review',()=>{
- it('states who actually pays the deposit and network gas',()=>{
-  const native=actionCost('register','10000000000000000000000','100000000');expect(native.gasSponsored).toBe(false);expect(native.attachedDepositPayer).toBe('player');expect(native.feeEstimateYocto).toBe('6500000000000000000000');
-  const delegated=actionCost('withdraw','1','100000000');expect(delegated.gasSponsored).toBe(true);expect(delegated.attachedDepositPayer).toBe('sponsor');
- });
- it('rejects missing, expired and increased native fee reviews',()=>{
-  const quote=actionCost('deposit','1000000000000000000000000','100000000');
-  expect(()=>checkReviewedFee(undefined,quote)).toThrow('fresh');
-  expect(()=>checkReviewedFee({...quote,estimatedAt:Date.now()-120001},quote)).toThrow('fresh');
-  expect(()=>checkReviewedFee(quote,actionCost('deposit',quote.attachedDepositYocto,'100000001'))).toThrow('increased');
-  expect(checkReviewedFee(quote,quote)).toBe(quote.feeEstimateYocto);
- });
+describe('gas-only sponsorship', () => {
+  it.each(['authorize_game', 'revoke_game'])('sponsors explicit %s without native token transfer authority', method => {
+    const prepared = prepareGameTransaction({...input, method, deposit: '0'});
+    expect(prepared.kind).toBe('delegateAction');
+    if (prepared.kind === 'delegateAction')
+      expect(assertSponsoredDelegate(prepared.delegate, 'worldo.testnet')).toBe(0n);
+  });
+  it('allows background batches only from the configured oracle', () => {
+    vi.stubEnv('NEAR_ORACLE_ACCOUNT_ID', 'oracle.testnet');
+    expect(assertSponsoredDelegate(delegate('apply_batch', 0n, 'oracle.testnet'), 'worldo.testnet')).toBe(0n);
+    expect(() => assertSponsoredDelegate(delegate('apply_batch'), 'worldo.testnet')).toThrow('cannot use');
+  });
+  it.each([1n, 10n ** 24n])('rejects attached native funds at the sponsor boundary (%s)', async amount => {
+    const fetch = vi.spyOn(globalThis, 'fetch');
+    await expect(submitSponsoredDelegate(delegate('authorize_game', amount), 'invalid')).rejects.toThrow(
+      'zero-deposit',
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('rejects another contract and unrestricted token transfers', () => {
+    expect(() =>
+      assertSponsoredDelegate(delegate('authorize_game', 0n, 'player.testnet', 'evil.testnet'), 'worldo.testnet'),
+    ).toThrow('cannot use');
+    expect(() => assertSponsoredDelegate(delegate('mt_transfer'), 'worldo.testnet')).toThrow('cannot use');
+  });
+  it('rejects multiple actions even when both methods are individually permitted', () => {
+    const d = delegate('authorize_game');
+    d.actions.push(actionCreators.functionCall('revoke_game', Buffer.from('{}'), 1n, 0n));
+    expect(() => assertSponsoredDelegate(d, 'worldo.testnet')).toThrow('single');
+  });
+  it('verifies ordinary owner transactions against the actual owner key', () => {
+    const prepared = prepareGameTransaction({...input, method: 'mt_transfer', deposit: '1'});
+    if (prepared.kind !== 'transaction') throw Error('Owner transfer must not be sponsored');
+    const digest = createHash('sha256').update(encodeTransaction(prepared.transaction)).digest();
+    const payload = (key: typeof player) =>
+      Buffer.from(JSON.stringify({signature: [...key.sign(digest).signature]})).toString('base64');
+    expect(assembleUserSignedTransaction(prepared.transaction, payload(player)).transaction.signerId).toBe(
+      input.accountId,
+    );
+    expect(() => assembleUserSignedTransaction(prepared.transaction, payload(other))).toThrow('does not match');
+  });
 });

@@ -1,4 +1,4 @@
-app = "lowland-near"
+app = "worldo"
 primary_region = "lhr"
 
 [build]
@@ -15,6 +15,8 @@ primary_region = "lhr"
   ENABLE_TESTNET = "true"
   TESTNET_SINGLE_PROCESS = "true"
   NEAR_AUTH_MODE = "social"
+  CHAIN_SYNC_ENABLED = "true"
+  GUEST_PLAY_ENABLED = "true"
   NEAR_RELAYER_SIGN_DEPOSIT_YOCTO = "1"
   NEAR_RPC_URL = "https://test.rpc.fastnear.com"
 
@@ -23,7 +25,7 @@ primary_region = "lhr"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
   processes = ["app"]
 
 [[http_service.checks]]
@@ -38,5 +40,5 @@ primary_region = "lhr"
   memory = "512mb"
 
 [[mounts]]
-  source = "lowland_data"
+  source = "worldo_data"
   destination = "/data"

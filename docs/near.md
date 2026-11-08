@@ -1,478 +1,123 @@
-# NEAR implementation and network setup
+# NEAR setup for Worldo
 
-The submission uses **real NEAR testnet transactions and social login**, with no
-practice-credit entry or disposable wallet offered to players. Set `APP_MODE=production`,
-`NEAR_NETWORK=testnet`, `NEAR_AUTH_MODE=social`, `ENABLE_TESTNET=true` and
-`ENABLE_MAINNET=false`. The production product profile does not mean mainnet:
-it selects the player-facing flow with real chain state. `APP_MODE` otherwise defaults to
-production when `NODE_ENV=production`, and development for local tooling. Auth
-always defaults to social and the network defaults to testnet; disposable test
-wallets require an explicit internal development setting.
+Worldo has two separate modes. `CHAIN_SYNC_ENABLED=false` runs the complete game without NEAR credentials in a separate local save namespace. `CHAIN_SYNC_ENABLED=true` keeps the same immediate gameplay, then settles a durable outbox to the selected NEAR network in ordered batches. Local and fast-forward progress never converts into chain assets.
 
-Mainnet payments remain disabled. The same architecture keeps a separately
-configured mainnet path, not a claim that production social
-signing, real-money swaps or the deployed Neon database have already been tested.
-Historical testnet validation below used browser test keys and proves that path only.
+The current three-city contract must be deployed and verified separately from the former single-town game. Historical receipts from the old contract do not validate this implementation. The account panel and `GET /chain/status` report actual settlement state; no transaction link is shown without a confirmed transaction.
 
-## Production readiness
+## Testnet deployment
 
-`GET /api/near/status` returns `productMode`, `defaultWorld`, `productionReady`,
-`liveEnabled`, `liveGameplayEnabled` and a `readiness` object. Operator diagnostics
-are also available at `GET /api/near/readiness`; the player UI shows only a friendly
-availability message. Each check has an `id`, `label`, `status` and safe `detail`.
-No connection strings, signing keys or upstream error payloads appear in responses.
+`worldo-cities-aecd50.testnet` runs the optimized city-ledger contract: 400,058 bytes, SHA-256 `578385df23d735304aa239de750d4df43817b9e6c4bf4f98fa7e230b0ee025ef`, fixed supply 136,000 game coins. See the [atomic deployment and initialization](https://testnet.nearblocks.io/txns/2iJdmZfuaStiPmMahWWFxkhL698Ai9vCHGKcmc9WjhGg), a [sponsored owner grant](https://testnet.nearblocks.io/txns/GK8urtjaSsGeVXv8tZGjDf7FxeMxMxxz4oh7D5CkXNCF), a [real mayor trade](https://testnet.nearblocks.io/txns/HQAdGwzzDqSispjpsfLCTZ3PWS5sLnmdRAGMaYVD6mNe) and a [revocation](https://testnet.nearblocks.io/txns/3fiMFzvpgMFvyae1uwgpx9xGBKbWaupB18UBzvqq8g6V).
 
-For testnet, use the official shared NEAR Auth client and an allowed callback,
-the deployed testnet contract, four distinct merchants, and funded testnet
-relayer/oracle accounts. Test tokens have no monetary value. The callback
-`http://localhost:3000` passed the read-only eligibility probe; the current Fly
-origin did not. This distinction is enforced by readiness, not hidden by a mock
-login button. Actual social login and MPC signing still need a user-driven test.
+The source has been reformatted since deployment with no logic change, so a fresh build can differ from that hash. `scripts/verify-contract-wasm.ts` plays a full session against a compiled contract with no network and checks every balance against the game.
 
-Neon can be configured later for testnet. Until then, set `LOCAL_DATA_DIR` to the
-mounted Fly volume (or an ignored local directory when recording) and
-`TESTNET_SINGLE_PROCESS=true`, and run one app machine. Readiness writes, flushes,
-reads and deletes a unique local probe. This tests filesystem access; the operator
-must still mount persistent storage. Mainnet cannot use this local fallback.
+## Guest play
 
-Before a later mainnet activation, obtain the approved mainnet Auth app and exact
-HTTPS origin and use separately funded mainnet accounts. Get the **pooled**
-connection string from the Neon console
-project’s **Connect** dialog, enable pooling, select the intended database/role,
-and retain `sslmode=require` or `verify-full`. Put it in `DATABASE_URL` through
-ignored local configuration or Fly secrets; never a `VITE_` variable.
+Set `GUEST_PLAY_ENABLED=true` on testnet to show **Play as guest**. Each guest gets a throwaway implicit account. The sponsor funds its storage, its key signs one bounded `authorize_game` grant, and the key is then discarded. The server keeps only the account name, tied to the browser session, so a guest can return to the same save. A few accounts are prepared in advance because a new one takes about 25 seconds. Guest play is refused on mainnet.
 
-When Neon is configured, readiness verifies it with a bounded transaction that writes a random probe,
-reads it back and deletes it. It also checks issuer discovery/JWKS, the RPC’s
-actual selected chain ID, deployed contract methods, registered merchant accounts,
-and the configured operators’ access keys and spendable balances. Results expire
-after 60 seconds and are invalidated by configuration changes. Failed runtime
-probes are cached for only five seconds. Read-only Auth and RPC checks retry a
-transient DNS/network failure at most once with a 150 ms delay, within the original
-timeout; forbidden callbacks are not retried. Transaction submissions never use
-this retry helper. Signing,
-sponsorship and oracle writes enforce this check. Executable Intents quotes also
-enforce it and remain available only in the separately configured mainnet path.
-The callback probe uses no cookies and does not sign in: an accepted origin returns
-a `login_required` error from Auth0, whereas a forbidden callback is rejected.
-An empty merchant buying budget does not disable the account; individual trades
-check affordability. A contract pause stops gameplay but is not itself an invalid
-deployment. The production operator keys currently require `FullAccess` on their
-dedicated accounts; do not use a treasury or personal wallet key.
+Social sign-in checks stop being required for settlement when guest play is on, so a world can run on a domain NEAR Auth has not approved yet. Set `NEAR_AUTH_MODE=off` on such a domain to hide the sign-in button, leaving only guest play.
 
-Keep `ENABLE_MAINNET=false` throughout submission and testnet recording. After a
-future mainnet approval and operator review, enable it only for explicitly
-authorized real-money launch/test amounts.
-Read-only readiness cannot prove OAuth callback approval, MPC signature execution,
-the contract’s configured oracle authority, a successful Intents settlement or
-withdrawal recovery. Verify social login, signature cancellation/account changes,
-native funding, sponsored game calls and withdrawal end to end before inviting
-players to use real funds. NEAR Auth production access remains a separate
-[approval](https://docs.auth.near.org/home/apply); setting environment variables
-does not obtain it. No runtime readiness check creates a wallet or sends NEAR.
+## Settlement costs
 
-## Internal development and testnet
+Empty city updates are never queued. Neighbouring city updates merge into one plan when a batch is claimed. Batches holding only city bookkeeping go out at most every five minutes, and player actions go out in the next batch. The sponsor budget reserves 60 TGas per sponsored call and returns the unused part after the transaction, because a real batch burns about 23 TGas. If the contract refuses a batch, the batch is split to find the cause, and an action refused three times alone is skipped so one bad action cannot stop every player.
 
-Practice fixtures and historical test wallets are internal development tools, not
-the production entry flow. Their progress never converts to on-chain money.
-Testnet uses free test tokens with no monetary value. Set `APP_MODE=development`, `NEAR_NETWORK=testnet`,
-`ENABLE_TESTNET=true`, `ENABLE_MAINNET=false` and `NEAR_AUTH_MODE=testnet-wallet`.
-Leave `NEAR_RPC_URL` and explicit Auth values blank to use network-derived defaults.
-The server selects the official listed testnet RPC (https://test.rpc.fastnear.com), `wrap.testnet` and testnet explorer; live-world
-records are isolated by network. The mainnet default is https://free.rpc.fastnear.com. These endpoints follow the
-[current official provider list](https://docs.near.org/api/rpc/providers). Before
-signing, broadcasting, activation or oracle writes, the server verifies the node’s
-actual `status.chain_id` against the selected network, cached for 30 seconds.
-`GET /api/near/network-status` exposes that check. Known opposite-network hosts
-are rejected at configuration time; other providers must still pass the chain-ID
-check. Never point a testnet deployment at a mainnet RPC.
+## Configuration groups
 
-1. Create and fund a **testnet-only** operator account through the
-   [NEAR faucet](https://near-faucet.io/). Deploy the compiled contract to a testnet
-   account; initialize its owner and oracle. Follow the contract initialization
-   sequence below, registering and funding the four testnet merchant accounts.
-2. Configure `NEAR_CONTRACT_ID`, `NEAR_ORACLE_ACCOUNT_ID`/`NEAR_ORACLE_PRIVATE_KEY`,
-   the four `NEAR_*_ACCOUNT` merchant settings, and
-   `NEAR_RELAYER_ACCOUNT_ID`/`NEAR_RELAYER_PRIVATE_KEY` with a funded testnet operator.
-   Set an explicit `NEAR_RELAYER_DAILY_BUDGET_YOCTO`. Browser test wallets do not
-   use MPC, so `NEAR_RELAYER_SIGN_DEPOSIT_YOCTO` is not required in this mode.
-3. Keep `LOCAL_DATA_DIR` on the Fly volume. Without Neon, testnet uses a durable
-   single-process operator journal for daily reservations and one-time activation.
-   This deployment must stay on one app machine. Mainnet continues to require
-   Neon for budget and executable-quote records. Testnet games also support Neon.
-4. In the wallet panel, choose **Create test wallet**, then **Activate wallet**.
-   The browser generates its own Ed25519 key and proves possession with a one-use,
-   session-bound challenge. The server derives the implicit account from the key;
-   it never accepts a claimed account as proof. The private key stays in this
-   origin’s testnet-specific browser storage. Clearing browser data loses access;
-   this is a disposable development wallet, not social login or a production wallet.
-5. Activation supplies **1 test NEAR once**, plus wrapped-token storage, within
-   the operator’s budget. Review registration (0.01 NEAR storage; the remainder
-   becomes game balance), sign it in the browser, then enter the testnet world.
-   Registration/deposits debit the player’s wallet and gas; one-yocto game calls
-   are sponsored. The same receipt and finalized-inventory reconciliation apply.
+Use ignored `.env.testnet` and `.env.mainnet` files copied from the corresponding templates in `config/`. Network launch commands load only that complete profile; they do not silently inherit credentials from the other one. Never put secrets in `VITE_` variables.
 
-The browser wallet is rejected outside development testnet at login, preparation and relay.
-The key is never sent to the game server. These accounts must never hold real funds.
-**NEAR Intents has no testnet deployment**, according to its
-[official FAQ](https://docs.near-intents.org/resources/faqs). Every Intents endpoint
-returns unavailable on testnet, including dry quotes. Mainnet swaps cannot fund
-testnet balances, and the testnet UI does not display real deposit instructions.
+| Settings | Purpose |
+| --- | --- |
+| `NEAR_NETWORK`, `ENABLE_TESTNET`, `ENABLE_MAINNET`, `CHAIN_SYNC_ENABLED` | Select the network and explicitly enable settlement. Keep the opposite network disabled. |
+| `PUBLIC_URL` / `APP_ORIGIN` | The exact browser origin registered with the authentication provider. If both are set, they must match. |
+| `NEAR_AUTH_MODE=social`, `NEAR_AUTH_CLIENT_ID` and optional issuer/audience/guard overrides | NEAR Auth sign-in and MPC signatures. Testnet network defaults are built in; mainnet needs the app's approved credentials. A client ID is public configuration, not a private key. |
+| `NEAR_CONTRACT_ID` | A fresh deployed Worldo city-ledger contract account. |
+| `NEAR_ORACLE_ACCOUNT_ID`, `NEAR_ORACLE_PRIVATE_KEY` | Dedicated simulation operator that signs authorizations and submits batches. |
+| `NEAR_REFINERY_ACCOUNT`, `NEAR_MOTOR_ACCOUNT`, `NEAR_HARBOR_ACCOUNT` and each matching `_PRIVATE_KEY` | Three dedicated mayor accounts. Their keys approve every batch and must match initialization. NEAR AI does not create these accounts or hold their keys. |
+| `NEAR_RELAYER_ACCOUNT_ID`, `NEAR_RELAYER_PRIVATE_KEY` | Dedicated funded sponsor for player onboarding, MPC signature requests and NEP-366 transaction gas. |
+| `NEAR_RELAYER_SIGN_DEPOSIT_YOCTO`, `NEAR_RELAYER_DAILY_BUDGET_YOCTO` | Current signing-service deposit and the operator's explicit daily sponsorship ceiling. Use the provider's actual required deposit, not a guessed fee. |
+| `DATABASE_URL` | Pooled Neon PostgreSQL URL with TLS. World state, outbox, authority grants and broadcast journals survive restarts. |
+| `GUEST_PLAY_ENABLED` | Shows Play as guest on testnet. Mainnet ignores it. |
+| `LOCAL_DATA_DIR`, `TESTNET_SINGLE_PROCESS=true` | Durable single-process filesystem storage when running testnet without Neon. A hosted deployment needs a persistent mounted volume. Mainnet requires Neon. |
+| `NEAR_AI_API_KEY` | Server-side dialogue with the three mayors. AI cannot change balances, prices or grant resources. |
+| `ELEVENLABS_API_KEY` and mayor voice IDs | Optional spoken replies. They are unrelated to wallet creation or chain settlement. Routine automated checks mock the provider. |
 
-### Verified testnet browser flow
+Create/fund testnet operator accounts through the [NEAR faucet](https://near-faucet.io/) or your NEAR account tools. Use dedicated accounts rather than a personal wallet or treasury key. Keep the contract deployment key outside the runtime environment and outside Git; it is needed for deploying code, not for ordinary game operation.
 
-On 2026-11-04, desktop run `20261104-testnet-05` passed against the deployed
-app and real NEAR testnet in 151.7 seconds. The browser created its own wallet,
-activated it, signed a 0.05 test NEAR registration (0.01 storage + 0.04 game
-balance), deposited another 0.01, and reloaded the same account. The resulting
-game balance before resource work was exactly 0.05 test NEAR.
+## Social login and network differences
 
-Using game controls, the player walked to Stonecut Quarry and harvested two ore
-with a finalized oracle receipt and one nonce increment. The player opened the
-foundry door from beside its swing, spoke to Rosa, and signed production of one
-steel from two ore. The contract charged exactly `1000000000000000000000`
-yoctoNEAR (0.001 NEAR), crediting the same amount to the merchant. The player then
-sold that steel through a reviewed, browser-signed transaction. Finalized chain
-and server inventories agreed at each step; the merchant received one steel,
-and combined player/merchant balances were conserved. The player's native wallet
-balance stayed unchanged during the two sponsored gameplay calls.
+NEAR testnet is a public blockchain, not a localhost-only chain. The [official NEAR Auth testnet page](https://docs.auth.near.org/resources/testnet) publishes shared development credentials and requires no production approval. The shared client still restricts callback origins. A custom domain such as `https://worldo.world` must be allowed by that client or by an app-specific client; changing an environment variable does not grant provider permission. Use the accepted loopback origin for a local demo if the public origin is not approved.
 
-The same run held actual backend quote responses during the switch from practice
-to testnet: the NEAR price panel showed dashes while responses were pending, then
-displayed the prices from those unmodified responses. It checked the RPC’s actual
-chain ID before transactions and used no Auth0 popup, fabricated balances,
-API action shortcuts or server-held player key.
+Mainnet uses a separate approved NEAR Auth application. Keep both profiles configured independently. The code selects network-specific RPC, Auth/MPC contracts, wrapped token and explorer; it verifies the RPC's actual chain ID before writes. Browser private-key wallets have been removed from the player flow.
 
-Public receipts: [harvest](https://testnet.nearblocks.io/txns/C777WkjGP7w4HD576q8Pm1svMUntfTqpjkB3QpA93SoK),
-[processing](https://testnet.nearblocks.io/txns/73EE58YXfQ755FhEDajJtfDCoB8jRQMP6k5hNcAxR3mJ),
-[steel sale](https://testnet.nearblocks.io/txns/9VfuHxesKa9Wpp5z1jHKWB9462asdxyRmQz2Fm9wSCei).
-Registration, deposit and exact checks are recorded in
-[testnet-validation.json](testnet-validation.json).
+Initial sign-in uses OIDC authorization code + PKCE with only the `openid` scope. The server binds a one-time state and nonce to the player's HttpOnly session, verifies the provider's RS256 ID token, issuer, client audience, nonce and freshness, and derives the same NEAR account from its verified subject. The callback returns to the configured origin itself, so the shared testnet client needs no additional callback path. Provider tokens are not returned to the game client. Pending attempts expire after five minutes. Sign-in stays in the same tab: the page goes to the provider, comes back to the origin, and the game carries on from the player's click.
 
-The remote run exited 0: one desktop scenario passed, portrait transaction
-execution was intentionally skipped, and no errors or flakes were reported.
-This does not validate mainnet Auth approval, an Intents settlement or a live
-Neon deployment; those remain separate integrations.
+This separation matters for hosted testnet compatibility: the [older Auth0 action](https://github.com/Peersyst/fast-auth/blob/b9c1fbc8861947893dfb53baa2d2c4d351e08f7d/packages/auth0/src/actions/authorize-app.action.js) accepts transaction and delegate payloads but rejects the newer `nep413` message parameter. That produces the reported “Signing audience requested without transaction payload” error. The [newer action](https://github.com/Peersyst/fast-auth/blob/ddab262122491fe3315d28195e719fb2151f1f37/packages/auth0/src/actions/authorize-app.action.js) adds message signing. Worldo no longer requires that feature for identity login. Only explicit game-asset approvals request the signing audience, with the exact delegate bytes still verified against the pending action and signed-in subject. Approvals also stay in the same tab, and the saved approval state must match on return. An expired transaction requires a fresh approval, never an automatic economic retry.
 
-### Official testnet social login
+NEAR Intents is a separate, optional mainnet wallet-funding integration. It does not mint game coins. Its [official FAQ](https://docs.near-intents.org/resources/faqs) says there is no testnet deployment, so Worldo disables executable Intents requests on testnet. Do not describe a local or testnet demo as a completed cross-chain swap.
 
-The [official testnet guide](https://docs.auth.near.org/resources/testnet) publishes
-client `np8paqIpMWmNbzT4xAvOOapZBjsOpptl`, domain `login.testnet.fast-auth.com`,
-signing audience `auth0.jwt.fast-auth.testnet`, Auth contract `fast-auth.testnet`
-and MPC contract `v1.signer-prod.testnet`. The submission uses `NEAR_AUTH_MODE=social`.
-A read-only authorization probe accepted the callback `http://localhost:3000`
-but rejected `https://worldo.world` and `http://localhost:5173` with a
-callback mismatch. That probe does not establish a completed login. A deployed
-social-login app needs its own approved callback configuration; the public client
-is not a bypass for arbitrary origins. The historical testnet preview used
-browser-owned test wallets for this reason; the player-facing product offers
-social login. For a local recording, use `PUBLIC_URL=http://localhost:3000` and
-open that exact origin. Testnet permits loopback HTTP even with a compiled
-production server; mainnet still requires HTTPS. A localhost callback cannot
-authenticate the Fly origin by changing a client-side setting.
+## Build and initialize the city contract
 
-## Residents, NEAR AI and speech
-
-`POST /api/npc/chat` accepts `{npcId,message,mode,history?}` and returns
-an actual NEAR AI reply with server-created reply metadata. Morgan runs the supply shop, Hale
-the refinery, Imani the sawmill, Rosa the foundry, and Theo the filling station.
-Players must be on foot, within 3.2 metres and visible across the shared town
-geometry. Model context uses server inventory, current stock, finite merchant
-budgets, processing rules and exact game quotes; conversation cannot execute economic actions.
-
-To enable model dialogue, create a server API key at
-[NEAR AI Cloud](https://cloud.near.ai/) and set `NEAR_AI_API_KEY`. The adapter uses
-the official `https://cloud-api.near.ai/v1/chat/completions` endpoint and
-`NEAR_AI_MODEL` (default [`Qwen/Qwen3-VL-30B-A3B-Instruct`](https://docs.near.ai/cloud/models)).
-Set `NEAR_AI_DAILY_REQUEST_LIMIT` to an explicit daily cap (default 100; zero disables).
-If the key is absent, the daily allowance is exhausted or the provider fails,
-chat reports that AI is unavailable; it does not present scripted text as a model
-response. Players can still open goods and services. No model receives a
-transaction tool, private key or authority to set prices.
-
-ElevenLabs speech uses server-only `ELEVENLABS_API_KEY`,
-`ELEVENLABS_MODEL_ID` (default `eleven_flash_v2_5`) and
-`ELEVENLABS_DAILY_CHARACTER_LIMIT` (default 10000; zero disables).
-Set a shared `ELEVENLABS_VOICE_ID` or individual `ELEVENLABS_VOICE_MORGAN`,
-`ELEVENLABS_VOICE_HALE`, `ELEVENLABS_VOICE_IMANI`, `ELEVENLABS_VOICE_ROSA`,
-`ELEVENLABS_VOICE_THEO`. Obtain voice IDs from your ElevenLabs voice library and
-an API key from account settings. These are separate from NEAR Auth credentials;
-voice synthesis neither authorizes nor submits transactions. Speech is unavailable
-when its provider or voice is not configured. The speech endpoint accepts an issued
-reply ID rather than arbitrary text and checks session ownership and proximity.
-See the official
-[speech endpoint](https://elevenlabs.io/docs/api-reference/text-to-speech/stream)
-and [voice reference](https://elevenlabs.io/docs/api-reference/voices/get).
-
-## Included integrations
-
-- `server/intents.ts`: current 1Click supported-token discovery, exact-input
-  quotes, decimal-safe amounts, origin-chain refunds, official SDK quote-signature
-  verification, immutable recipient routing, durable quote records, session-scoped
-  execution status. Dry quotes never return executable instructions from this app.
-- `server/near.ts`: network-configured NEAR Auth sign-in and testnet-only browser wallets, single-use NEP-413 login challenges,
-  JWT issuer/audience/application verification, MPC-derived implicit accounts,
-  contract/account reads and allowlisted user-approved contract calls.
-- `server/relayer.ts`: locally managed production signing relayer. Keys stay server-side. It
-  reserves its configured signing deposit plus gas estimated at twice the current
-  RPC gas price against a durable Neon budget. Delegated calls separately reserve
-  their one-yocto deposit and gas; player deposits never use sponsored funds.
-- `contracts/`: Rust economy with NEP-245 core balances, transfers, batch transfers,
-  transfer-call and bounded refund resolution, token queries and events. Optional
-  approval, metadata and enumeration extensions are not implemented. Harvesting is
-  restricted to a trusted gameplay oracle, has per-account daily caps and sequential
-  nonces. Native NEAR deposits back spendable balances; trading conserves those
-  balances. Failed withdrawals restore the account balance through a callback.
-
-## Approved social login
-
-1. Apply at <https://docs.auth.near.org/home/apply> for a **mainnet** NEAR Auth
-   application. The [official FAQ](https://auth.near.org/) says approval provides
-   the production Auth0 domain, client ID and audience. Submit the app name,
-   description, expected volume, use case and contact. A new personal Auth0 tenant
-   or the public testnet client ID does not by itself grant mainnet access.
-2. Set `PUBLIC_URL` to the exact public origin, for example
-   `https://YOUR-APP.fly.dev`. Register that exact value as the allowed callback
-   URL, logout URL and web origin for the approved app. Popup callbacks use this
-   origin, without a separate callback path. Production requires HTTPS. Register
-   the local development origin separately if needed. `APP_ORIGIN` is an optional
-   alias; if both variables are set, they must resolve to the same origin.
-3. Set `NEAR_AUTH_CLIENT_ID`, `NEAR_AUTH_DOMAIN` and `NEAR_AUTH_AUDIENCE` from the
-   approved configuration. **Audience here is the signing API audience**, called
-   `signingAudience` in the official JavaScript provider; ask the NEAR Auth team to
-   confirm it if the approval also lists a general API audience. Defaults are
-   `login.auth.near.org` and `auth0.jwt.fast-auth.near`. `NEAR_AUTH_GUARD_ID`
-   defaults to `jwt#https://<approved-domain>/`; set it only to the corresponding
-   registered guard approved by the provider. The server derives the wallet using
-   `{guard_id}#{verified JWT sub}` and uses the same guard to request signatures.
-   When changing the domain, also update or remove any old explicit guard value.
-4. These settings are public application configuration served by the trusted
-   server; issuer, JWKS URL, audience and guard are never accepted from request
-   bodies. The server validates RS256 signature, issuer, signing audience,
-   application ID, token age, subject and the exact one-use challenge or delegate
-   bytes. Signing keys and API credentials remain server-only.
-5. Test sign-in with an enabled method. The server verifies the challenge, then
-   asks `v1.signer` for the key derived through `fast-auth.near`. It never accepts
-   a user-entered account as proof of ownership. Existing deployments must use
-   their previously approved issuer/guard consistently to retain wallet identity.
-
-The published JavaScript provider 1.4.1 predates the documented NEP-413 message
-method. `src/lib/near-provider.ts` uses Auth0's public APIs and the official NEAR
-provider's NEP-413 encoding and byte-array authorization parameters. Auth0
-serializes those arrays as comma-separated URL values. Each requested signature
-uses `getTokenWithPopup`, which performs popup authorization and retrieves the token
-for that exact signing audience and `transaction:sign` scope. The adapter immediately
-matches `fatxn` to the requested bytes and the current subject, then consumes the
-token once. It does not call `getTokenSilently` to refresh or reuse a prior action.
-The click handler opens its authorization window before asynchronous preparation,
-so mobile browsers retain the user gesture required to allow the popup.
-The server independently verifies the JWT; browser decoding is not verification.
-
-Unit tests cover alternate trusted issuer configuration, callback consistency,
-NEP-413 encoding, stale/wrong-subject tokens, failed popups and concurrent requests.
-Production sign-in and a real delegated action still need an end-to-end test with
-approved credentials; mocks do not establish provider approval or availability.
-
-## Network profiles and mainnet activation
-
-NEAR testnet is a public chain with independent state from mainnet. Serving the
-client on localhost changes the website origin, not the blockchain. The shared
-testnet Auth application currently accepts our `http://localhost:3000` callback;
-that is sufficient for a local social-login demo against public testnet. See the
-[official Auth network configuration](https://docs.auth.near.org/resources/networks).
-
-Use `config/testnet.env.example` and `config/mainnet.env.example` as complete,
-credential-free templates for ignored `.env.testnet` and `.env.mainnet`. Run
-`npm run build`, then `npm run start:testnet` or `npm run start:mainnet`. The launcher
-reads the chosen profile before importing any application module and removes
-inherited app environment values. It never falls back to the generic `.env` or
-the other profile. The mainnet template deliberately starts with
-`ENABLE_MAINNET=false`; missing credentials never enable transactions.
-
-After approval, mainnet activation needs these independent resources:
-
-1. The approved mainnet Auth client, issuer, signing audience and exact
-   `https://worldo.world` callback/web origin. Default issuer/guard settings derive
-   from `NEAR_NETWORK=mainnet`; clear old explicit testnet overrides.
-2. A mainnet Worldo contract deployed from `contracts/`, initialized with the
-   intended owner and oracle, and registered/funded mainnet merchant accounts.
-   Follow **Contract build and deployment** below. A network switch cannot deploy
-   a contract or copy testnet balances.
-3. Funded mainnet relayer and oracle accounts, their server keys, an explicit daily
-   sponsor budget and the verified signing deposit for the deployed mainnet MPC.
-4. A pooled TLS Neon connection for the mainnet environment. Keep its database or
-   branch separate from demo data. Add the AI and speech service credentials if
-   those features are to be enabled.
-5. `NEAR_NETWORK=mainnet`, `ENABLE_TESTNET=false`, `ENABLE_MAINNET=true`,
-   `APP_MODE=production` and `NEAR_AUTH_MODE=social` together. Restart with that
-   profile and check `/api/near/readiness`, then verify real sign-in, signing,
-   registration/deposit, a game trade and withdrawal. Exercise Intents separately
-   with a deliberately small approved mainnet amount; no testnet swap exists.
-
-On Fly, install the entire matching configuration as runtime secrets/settings;
-local `.env` files are excluded from the image. Clear or replace old Auth, RPC,
-account and database overrides rather than changing only `NEAR_NETWORK`.
-Preserve the container's `LOCAL_DATA_DIR=/data/worlds`, `PORT=3000` and
-`PUBLIC_URL=https://worldo.world`. Keep one machine until login sessions and
-sponsor nonce locking have shared coordination. The checked-in `fly.toml` remains
-the testnet deployment; change its network settings for a mainnet release as well.
-
-Network profiles need no application code edits. Provisioning and a real mainnet
-smoke test remain required; unit tests do not prove provider approval or settlement.
-This change does not activate mainnet or alter the hosted deployment.
-
-## Mainnet funding
-
-Set `NEAR_CONTRACT_ID` to the deployed Worldo contract and `ENABLE_MAINNET=true`
-only after deployment checks. `DATABASE_URL` is required for production executable
-quotes. `NEAR_INTENTS_API_KEY` is optional, server-only partner authentication from
-<https://partners.near-intents.org/>; unauthenticated requests have the platform's
-published fee schedule.
-
-1Click uses `nep141:wrap.near` (**wNEAR**) as the destination asset and
-`recipientType: DESTINATION_CHAIN`. The recipient is the signed-in player's
-server-derived NEAR account, never the app treasury. The quote includes minimum
-output, fees, deadline, deposit address and any required memo. The user sends the
-displayed asset on its exact source chain using their source wallet. The app does
-not round the payment amount: it formats the signed request’s atomic source units
-using the selected token’s decimals. Payment instructions name that asset/network,
-display the required memo when present, and copy the memo verbatim (including
-leading zeros). Incomplete or unverified instructions do not display a destination.
-The app does
-not control that wallet. Status is fetched from 1Click by the server and checked
-against the signed stored routing. A successful wallet-funding swap is not a game
-purchase: the player explicitly unwraps wNEAR into native NEAR and then approves a
-game-contract deposit. The UI displays these as separate confirmed operations.
-
-Before executable funding instructions, `POST /api/near/prepare-wallet` creates the
-verified implicit account if absent and registers its storage on `wrap.near`.
-The local relayer reserves the cost against its daily budget; each identity gets
-one provisioning attempt in the durable journal. Already-ready accounts need no
-payment. Ambiguous interrupted provisioning is not automatically paid twice; the
-operator must reconcile its receipt before resetting a journal entry. The account
-seed is 0.01 NEAR, storage cost is queried from `wrap.near`, and both are bounded.
-This is an operator-funded onboarding expense, not a player earnings faucet.
-
-The integration currently offers supported EVM networks, NEAR, Solana and Bitcoin
-from the upstream token list. Other 1Click chains are intentionally excluded until
-their address and memo flows are implemented. Nothing here means every coin is
-supported. Validate the complete route, unwrap and contract deposit with a small
-explicit user-approved amount before launch; never credit a game balance based
-only on a swap status.
-
-## Signing relayer
-
-There is no assumed public relayer URL. The local implementation calls the official
-`fast-auth.near` signing contract. Configure these as **Fly secrets**, not Vite env:
-
-- `NEAR_RELAYER_ACCOUNT_ID`: the funded operating account.
-- `NEAR_RELAYER_PRIVATE_KEY`: its dedicated signing key; restrict permissions and
-  keep only the intended operating budget in this account.
-- `NEAR_RELAYER_SIGN_DEPOSIT_YOCTO`: the signing deposit required by the deployed
-  NEAR Auth contract. There is deliberately no guessed default. The reference
-  implementation makes this configurable.
-- `NEAR_RELAYER_DAILY_BUDGET_YOCTO`: explicit maximum daily reservation, including
-  attached signing deposit and the per-call gas allowance.
-- `DATABASE_URL`: durable budget and quote records.
-
-For the current testnet deployment, set `NEAR_RELAYER_SIGN_DEPOSIT_YOCTO=1`
-(one yoctoNEAR; gas is separate). A read-only check on 2026-11-04 confirmed that
-`fast-auth.testnet` points to `v1.signer-prod.testnet`, domain 1. The MPC contract’s
-`contract_source_metadata` at finalized block 276228994 reports version 3.18.0 and
-commit `e691bdb98d68dcf74653da58d043453a6318765f`; its pinned
-[deposit constant](https://github.com/near/mpc/blob/e691bdb98d68dcf74653da58d043453a6318765f/crates/near-mpc-contract-interface/src/deposits.rs#L4)
-defines the signing minimum as 1. The Auth contract forwards the attached deposit
-to MPC. This verification sent no transaction. Recheck the deployed signer’s
-requirements for later upgrades or a mainnet launch.
-
-For development/reference integrations, point `NEAR_AUTH_RELAYER_URL` at an operator-controlled deployment of
-the [official reference relayer](https://github.com/Peersyst/fast-auth/tree/main/apps/relayer),
-including its `/relayer/fast-auth` base path. `NEAR_AUTH_RELAYER_TOKEN` is optional
-authentication for that operator's gateway. The app calls its documented
-`/sign-delegate-tx` route. External relayer budgets and access controls are the operator's
-responsibility; the built-in database budget applies to the local implementation.
-The production readiness gate requires the local managed operator configuration,
-so it can verify the signing key, account funding and durable spending budget.
-
-**NEP-366 makes the relayer pay both attached deposits and gas.** Therefore
-registration and game deposits use ordinary player-signed transactions, never
-sponsored delegate actions. Auth0 authorizes the exact encoded transaction; the
-MPC signature is verified against the player's key and sent to NEAR RPC. The
-player's native wallet pays the attached amount and network fee. The operator
-pays only the separate NEAR Auth signing-service call.
-
-Other allowlisted game operations and wNEAR unwrap use NEP-366 with exactly one
-yoctoNEAR attached, paid by the sponsor together with network gas. A second check
-at the sponsor broadcast boundary rejects deposits, registration, transfers,
-unknown methods/receivers and any attached amount other than one yocto. Sponsor
-budget reservations include both this attached amount and the wrapper's gas.
-Gas reservations are conservative estimates at the current price; they do not
-freeze future protocol prices. Native player deposits are never operator loans
-and cannot be credited from the sponsor's balance.
-
-The review fetches `POST /api/near/action-cost`. It states the verified account,
-attached-payment payer, gas payer and a current network fee estimate (60 TGas call
-plus a 5 TGas overhead allowance). This is not a fixed network price; unused gas
-is refunded. Native signing requires a review no older than two minutes. The
-server checks the estimate again before preparing and before broadcasting the
-signed transaction, rejecting increases or an account change. The protocol still
-determines the actual charged gas when executing the transaction.
-
-The external reference relayer's `/sign-tx` endpoint obtains ordinary transaction
-signatures; `/sign-delegate-tx` handles sponsored calls. All operations require
-an explicit app review and a player signature. Social mode uses Auth0 authorization;
-testnet-wallet mode signs locally with its test-only browser key. Fully silent routine gameplay
-requires an additional bounded session design and is not claimed by this adapter.
-
-The gameplay oracle uses `NEAR_ORACLE_ACCOUNT_ID` and
-`NEAR_ORACLE_PRIVATE_KEY`, server-only. Set `NEAR_REFINERY_ACCOUNT`,
-`NEAR_FOUNDRY_ACCOUNT`, `NEAR_SAWMILL_ACCOUNT`, and `NEAR_DEPOT_ACCOUNT` to the
-registered merchant accounts. `server/game-chain.ts` reads canonical chain balances,
-obtains exact merchant quotes and submits bounded harvest grants. The authoritative
-game server must journal each account/nonce before granting, and reconcile final
-chain state after errors; a timed-out transaction must not be retried with a new
-nonce. Ordinary balance reads and accounting use finalized chain state.
-
-## Contract build and deployment
+Build and test from `contracts/`:
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo test --manifest-path contracts/Cargo.toml
-cargo build --manifest-path contracts/Cargo.toml --target wasm32-unknown-unknown --release
+cargo test --locked --lib
+cargo build --locked --target wasm32-unknown-unknown --release
 ```
 
-The WASM artifact is `contracts/target/wasm32-unknown-unknown/release/lowland_economy.wasm`.
-CI runs the same checks on Linux and uploads the artifact. Deployment must select
-real owner, contract and oracle accounts; no example account is a deployment target.
+The Rust output is `contracts/target/wasm32-unknown-unknown/release/worldo_economy.wasm`. The container uses a digest-pinned Rust image and Binaryen `108-1` to optimize it before packaging `dist/contracts/worldo.wasm`. To match that optimization locally, run Binaryen 108 from `contracts/`:
 
-Initialize `new({owner, oracle})` from the chosen owner account. The economy starts
-paused. Register player/NPC accounts with their storage reserve, fund merchant
-balances with native NEAR on the selected network, register each merchant's business kind, verify balance
-conservation and transaction receipts, then call `set_paused({paused:false})` from
-the owner. In live mode, the operator must call `produce_stock` using each
-merchant's own account to turn purchased raw stock into goods. No autonomous
-mainnet merchant-production runner is included; autonomous cycles in the practice
-world are a simulation. The oracle can issue bounded harvests, not print NEAR. Funding,
-deployment and unpausing are separate explicit operating steps.
+```sh
+wasm-opt -Oz --strip-debug --strip-producers --enable-bulk-memory --enable-sign-ext --enable-mutable-globals \
+  target/wasm32-unknown-unknown/release/worldo_economy.wasm -o target/worldo.wasm
+```
 
-`sendNearAction` supports registration, deposit/withdrawal, trade, processing,
-facility construction and owned refining. It is a transaction adapter; the game
-server must reconcile finalized contract inventory and receipts with the live
-world before offering real-money gameplay. Practice-world `/api/action` is not that
-reconciliation layer and must never mint live inventory without verified oracle
-state.
+After configuring the contract, oracle and mayor accounts, print the public initialization manifest first:
 
-## Sources checked
+```sh
+node --env-file=.env.testnet --import tsx scripts/deploy-city-contract.ts
+```
 
-- <https://docs.near-intents.org/api-reference/oneclick/request-a-swap-quote>
-- <https://docs.near-intents.org/integration/distribution-channels/1click-api/verify-quote-signature>
-- <https://auth.near.org/> (mainnet approval FAQ)
-- <https://docs.auth.near.org/home/quickstart>
-- <https://github.com/auth0/auth0-spa-js/blob/main/src/Auth0Client.ts>
-- <https://docs.auth.near.org/protocol/concepts/relayer>
-- <https://github.com/Peersyst/fast-auth/tree/main/packages/providers/javascript>
-- <https://github.com/near/NEPs/blob/master/neps/nep-0245.md>
-- <https://github.com/near/nearcore/blob/master/runtime/runtime/src/actions.rs> (delegate deposit payer)
-- <https://github.com/near/NEPs/blob/master/neps/nep-0366.md>
-- <https://github.com/Peersyst/fast-auth/blob/main/packages/sdks/browser/src/signers/signer.ts>
-- <https://github.com/Peersyst/fast-auth/blob/main/apps/relayer/src/modules/relayer/relayer.controller.ts>
+The manifest derives the opening inventories, 12,000 coins per city and 100,000-coin starter pool from the same shared configuration used by the game. It contains only account IDs and public keys. There are three mayors, not the old game's four merchants.
+
+Once deployment is intended, use a fresh, funded contract account and a NEAR credential JSON file containing `account_id` and `private_key` (or `accountId` and `privateKey`):
+
+```sh
+node --env-file=.env.testnet --import tsx scripts/deploy-city-contract.ts --deploy --wasm contracts/target/worldo.wasm --key-file /private/path/worldo-contract.json
+```
+
+The script verifies the network, operator keys and empty contract state before writing. It refuses to overwrite an initialized account or unrelated code. It deploys and initializes atomically, then verifies the fixed coin supply and prints the real transaction hash. The contract also requires self-initialization, preventing a different account from taking ownership before setup. A rerun can finish initialization after code deployment was interrupted. Mainnet additionally requires the mainnet profile, explicit network enablement and `--confirm-mainnet`; none of these commands is part of normal game startup.
+
+Keep settlement off until that deployment is verified, then set `CHAIN_SYNC_ENABLED=true`. Use a new world namespace for a new contract; do not import old single-town saves.
+
+## What is on-chain
+
+The contract records integer game `coin`, resource balances, unique equipment instances and station deeds. Harvested raw materials are validated in the game and minted when delivered to a city or used for station construction/upkeep. Petrol already belongs to its owner; stocking a station locks part of that balance into its tank. Offline driver sales spend only stocked petrol and pay from finite funded budgets.
+
+The trusted simulation operator controls gameplay decisions. All three mayor keys are also operated by Worldo; their signatures are not independent consensus. Read [the contract trust boundary](../contracts/README.md) before treating these assets as externally tradable.
+
+Direct NEP-245 wallet transfers are intentionally disabled while assets belong to the ordered game ledger. An immediately accepted game action can already have reserved the balance before the next chain batch. Free external transfers would race those reservations. This release has no export, peer-to-peer wallet trading or cash redemption. On-chain ownership does not imply unrestricted outside transfers.
+
+## Consent, settlement and recovery
+
+Players sign in socially and approve a bounded Worldo game-token grant. The default expires after 30 days and caps cumulative coin debits at 100,000. It cannot spend native NEAR or another application's tokens. Normal gameplay has no wallet popups and does not wait for settlement.
+
+The Play button now starts that setup as one flow: its nearby explanation describes automatic in-game trades, and expandable permission details show the actual limit and exclusions. After social login the same tab goes on to any required approval, and entry happens only after the grant is confirmed. A player with a usable existing grant needs no new approval. If a step stops short, a visible Continue to play button starts it again from a fresh click. NEAR Auth's own approval screen may still identify the network; Worldo does not suppress consent or grant itself permission by default.
+
+Cancellation before submission prevents relay. Once submission has started, a lost response or cancellation cannot prove the transaction was unsent: a non-secret pending marker survives reload, and the next explicit attempt checks the grant instead of resubmitting. A fresh approval is allowed only after definite non-submission, a confirmed failure, or a FINAL grant query beyond that delegate's maximum block height. Grant state and height come from the same query. Account, public key, network, contract, expiration and remaining allowance must match. The contract and its limits are unchanged by this onboarding update.
+
+Revoking first freezes the exact grant epoch in the same durable compare-and-swap transaction used by game actions. An oracle-signed, owner-approved nonce cutoff lets already accepted actions finish while refusing new ones. Station tanks continue serving offline customers from previously allocated stock.
+
+Each batch is immutable and ordered. Its exact signed transaction is journaled before broadcast. If a response is lost, the settler checks the same hash and can retransmit the identical envelope while valid. Once a FINAL block proves the delegate expired, it can sign a new envelope for the same immutable batch within the sponsorship budget. Prior attempt hashes are retained to find the real winning receipt; contract batch IDs and sequences prevent duplicate game effects. The latest 512 operation receipts and 128 batch receipts remain queryable; permanent nonces protect replay after older lookup entries are evicted. Failed or uncertain batches remain visible in `/chain/status` while immediate gameplay remains available.
+
+## Verification before public use
+
+`GET /api/near/readiness` checks configuration, persistent storage, provider callback eligibility, the deployed contract version/transfer boundary and operator accounts. It reports safe summaries rather than secret values. Read-only readiness is not proof of completed social sign-in or signing.
+
+`authConfigured` describes the static social-login configuration, including the selected network and origin rules. Ordinary game config, identity, login status and challenge requests do not wait for full health probes. The actual login still verifies the provider token and the session challenge. Funded account operations retain their readiness and authorization checks. The optional funding panel explicitly requests `GET /api/near/status?readiness=1` for current operational status.
+
+Complete an end-user social login, grant approval/cancellation, gameplay batch, reload, revoke and fresh-grant cycle on the intended origin. Confirm real receipts and balances against the contract. Test mainnet funding separately with explicitly authorized amounts after approval. Unit tests and the isolated simulation do not substitute for those external integration checks.
+# Sign-in timing and diagnostics
+
+Login ID tokens and transaction-approval tokens allow a fixed five seconds of clock difference. Signature, issuer, audience, nonce/client binding and five-minute freshness checks remain enforced. A read-only service check on 6 November 2026 observed the provider clock roughly 1.3 seconds ahead of the workstation; that could explain intermittent immediate-token rejection, but the failed personal attempt did not retain enough diagnostics to establish its exact cause.
+
+Token exchange, token verification and MPC public-key lookup now report separate, sanitized server diagnostics. Logs contain only a stage, allowlisted error code/claim, HTTP status, retry count and duration. Codes, tokens, subjects, cookies and provider response bodies are excluded. Transient JWKS or MPC reads receive at most one retry; invalid signatures/claims, malformed keys, code exchanges and economic writes do not. The callback deadline accommodates these bounded reads.

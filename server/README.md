@@ -1,27 +1,35 @@
-# Game service
+# Worldo game service
 
-The HTTP service owns the practice economy. A browser receives an opaque random cookie; only its SHA-256 digest is used as the database key. Cookies are HttpOnly and SameSite=Strict, with Secure enabled in production. The public player ID is not a session credential.
+The live game is mounted under /api/game. Old /api/session, /api/action, /api/live and practice-reset routes are removed.
 
-`GET /api/session` starts or resumes a game. `POST /api/action` accepts a strict `GameAction` object. Attach a unique `x-request-id` for retries: the last 256 successful IDs, up to an hour old, prevent repeat effects. `POST /api/reset` intentionally resets the practice world. Movement is validated by distance and elapsed server time; coordinates cannot change vehicle state. Proximity, quantities, budgets, carry limits, cooldowns and recipes are checked on the server.
+## State and settlement
 
-`DATABASE_URL` selects Neon PostgreSQL. Run `migrations/001_sessions.sql` for the full schema and maintenance index; the application also creates the required table on startup. JSON state and private timing metadata are stored in one row. All changes use compare-and-swap on an increasing revision, so two requests cannot spend the same stock or overwrite each other. Without this setting, the local practice preview uses `.local/games/` with atomic file replacement. Local files require a persistent disk if deliberately deployed; use Neon for Fly production. Keep Fly and Neon in the same region to reduce update latency. Health reports the selected storage honestly.
+CityController coordinates the shared world. WorldStore persists one deployment-scoped document using Neon PostgreSQL revision compare-and-swap or a single-process atomic local file. Players, cities, driver balances, station tanks and contract reservations are validated together. All accepted economic effects and their outbox entries commit atomically. Economic operation IDs survive restarts for idempotent retries.
 
-Every guest has a separate practice economy, including NPC inventories and budgets. Practice credits never convert to NEAR, and incoming mainnet payments do not modify practice balances. Auth and Intents routers use the same server-issued session key but maintain their own verified account identity.
+Local chain-off play uses a distinct local.worldo namespace and opaque HttpOnly, SameSite=Strict cookies. Chain-enabled play derives the account from verified social identity. The client cannot set balances, invent a player identity, teleport, or supply a settlement receipt. Simulation snapshots cannot enter the live store.
 
-## Mainnet gameplay
+The city worker advances every five seconds. The background settler claims bounded immutable batches around every sixty seconds when a player action is waiting, and every five minutes when only city bookkeeping is. Neighbouring city updates are merged at claim time. An uncertain transaction retains its original signed envelope, batch ID and sequence for reconciliation. Confirming a batch removes only its included outbox entries, preserving newer accepted actions. The client never waits for this chain phase to trade.
 
-`/api/live/session`, `/api/live/action`, `/api/live/quote` and `/api/live/retry` require a verified NEAR Auth identity and a fully configured mainnet deployment (including Neon, the oracle and all four merchant accounts). Live worlds are keyed by the authenticated account, separately from browser practice sessions. Practice reset does not touch them. Unregistered accounts must register through an explicitly approved contract transaction first.
+A scoped game-token authority is checked locally from previously verified authorization. The world CAS reserves cumulative coin spend and records the authority epoch. Revocation freezes that epoch under the same CAS, producing the last accepted nonce; later settlement can finish those accepted actions. The contract locks direct external transfers to prevent the off-chain/outbox double-spend race. See [contract trust boundaries](../contracts/README.md).
 
-The game projects NEAR balances, resource inventories, refinery ownership and merchant stock directly from finalized contract views. UI numbers are display values; transaction amounts and limits remain exact yoctoNEAR strings. Trade, processing and construction actions return a concrete transaction for the player to review and sign. They do not credit resources or money off-chain. Once signed execution finishes, the client refreshes the chain-backed session.
+## Routes
 
-Harvest and fuel consumption use the trusted gameplay oracle. The service validates the player's position, energy, cargo and cooldown, then atomically journals a fixed account command nonce before submitting. Local world effects stay pending until the contract confirms that nonce. A lost response is reconciled from chain state. Retries reuse the same nonce, under a durable 65-second attempt lease, and completed oracle request IDs are retained separately from short-lived movement IDs. After three uncertain attempts, automatic submission stops; an operator must inspect the finalized transaction/account before resolving the journal. The client can check an existing command without starting a new award. Do not delete live records or their oracle journals during anonymous-session cleanup.
+| Route | Purpose |
+| --- | --- |
+| GET /api/game/config | Public network/auth/local-mode configuration |
+| GET /api/game/overview | Read-only world camera anchor |
+| GET /api/game/session | Current authenticated/cookie-bound player and sync status |
+| POST /api/game/action | Strict action + UUID operationId; returns persisted snapshot |
+| POST /api/game/quote | Current quantity/reputation-aware trade quote |
+| GET /api/game/equipment-prices | Current equipment and repair prices |
+| GET /chain/status | Real batch health, backlog and confirmed receipt |
+| /api/preview | Isolated scenario: step, reset, simulated station-price change only |
+| /api/near | Social auth, sponsored authorization, readiness and account services |
+| /api/intents | Optional mainnet wallet-funding quotes and reconciliation |
+| /api/npc | Bounded mayor chat and optional speech |
 
-Mainnet has no fast-forward or reset. Deposits replenish according to server UTC days, and both the service and contract limit daily extraction. A scanner is a free equipment loan in live mode. Mainnet recipes and fees come from `state.live` and the contract quote endpoint, rather than practice prices. The server's receipt-based harvest count is a convenience guard; the contract's daily counter is authoritative. NPC merchant keys and production scheduling are separate from player settlement.
+Movement, proximity, line of sight, elapsed gather time, capacity, tool condition, fuel, stock and treasury are server-validated. Idle online clients acknowledge earnings every five seconds; offline reports only accumulate after a short presence grace period. Returning session reads perform bounded simulation catch-up before showing the report.
 
-Prices are in `shared/economy-rules.ts`. Prices react to stock, and the buy/sell spread prevents immediate round-trip profit. Sales transfer existing credits from an NPC budget. Purchases, scanner purchases, processing fees and construction payments return credits to businesses. A simulated day processes inventory, transfers existing money between businesses, and consumes fuel and building supplies. It never creates money. Resource deposits replenish only in the explicitly requested practice-day simulation. NPC budgets can therefore run dry.
+Mutation routes reject cross-site origins and Fetch Metadata requests; JSON has a16KiB limit and per-IP throttling. No public admin reset or client-controlled balance API exists. Provider replies never authorize economy mutations. NPC conversation context and reusable speech buffers are bounded and ephemeral; persistent provider budget accounting contains counters, not conversation transcripts.
 
-Oil prospecting uses a private, persistent coordinate within the North ridge region. The map marks the region, not the oil. Each scan costs energy and returns a distance-sensitive signal plus a cardinal direction hint. The server reveals the exact drilling coordinate only when a scan is within 4.5 metres, and extraction requires standing within 5.5 metres of that discovered location. The same location, energy and cooldown checks run before a mainnet harvest oracle command is reserved. Restarting the server or refreshing a session does not relocate a discovered deposit.
-
-API mutation routes reject foreign origins and cross-site Fetch Metadata requests. Request bodies have a 16 KiB limit, a per-IP rate limiter protects endpoints, and no API enables CORS. The service uses one trusted proxy hop for Fly. `PUBLIC_URL` should contain the production HTTPS origin. `createApp(store, {frontend:false})` supports HTTP tests without starting Vite.
-
-For production maintenance, periodically remove old anonymous sessions after a chosen retention window. The current prototype does not run automatic deletion. The local file adapter is designed for one Node process; Neon handles cross-process writes with the same revision checks.
+Run one process for this release. PostgreSQL prevents lost economic updates, but social login sessions and some sponsor/provider coordination still live in memory. Durable operation IDs and world history grow over time; large deployments need an explicit archival/scaling design. Missing credentials produce unavailable service responses rather than simulated success.

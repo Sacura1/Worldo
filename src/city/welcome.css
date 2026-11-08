@@ -1,0 +1,165 @@
+.worldo-game .welcome-card {
+  gap: clamp(12px, 2.5dvh, 22px);
+  padding: 0;
+  max-height: calc(100dvh - 40px);
+  scrollbar-width: none;
+}
+.worldo-game .welcome-card::-webkit-scrollbar {
+  display: none;
+}
+.welcome-intro,
+.welcome-actions {
+  width: 100%;
+}
+.welcome-intro .eyebrow {
+  display: block;
+  margin-bottom: 12px;
+}
+.welcome-intro > p {
+  font-size: 15px;
+  line-height: 1.65;
+  color: #cbd0d0;
+  max-width: 420px;
+  margin: 16px 0;
+}
+.worldo-game .welcome-logo {
+  margin-bottom: 0;
+}
+.worldo-game .welcome-cities {
+  margin: 0;
+}
+.welcome-actions .play-consent {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  margin: 0 0 12px;
+}
+.welcome-actions .inline-error {
+  margin: 0 0 12px;
+}
+.welcome-actions > small {
+  display: block;
+  margin-top: 8px;
+}
+.worldo-game .permission-link {
+  background: none;
+  border: 0;
+  padding: 9px 0 0;
+  min-height: 32px;
+  font-size: 11px;
+  color: var(--brass);
+  gap: 4px;
+}
+.permission-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.welcome-permission-copy {
+  font-size: 14px;
+  line-height: 1.8;
+  max-width: 52ch;
+}
+.welcome-awaiting {
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+}
+.welcome-awaiting p {
+  margin: 0;
+}
+.worldo-game .welcome-footer {
+  padding-top: 12px;
+}
+@media (max-height: 700px) {
+  .worldo-game .welcome-card {
+    gap: 12px;
+    max-height: calc(100dvh - 32px);
+  }
+  .worldo-game .welcome-logo {
+    width: 130px;
+    max-height: 82px;
+  }
+  .worldo-game .welcome-card h1 {
+    font-size: 44px;
+  }
+  .welcome-intro .eyebrow {
+    margin-bottom: 8px;
+  }
+  .welcome-intro > p {
+    font-size: 12px;
+    margin: 12px 0;
+  }
+  .worldo-game .welcome-cities {
+    gap: 12px;
+  }
+  .welcome-actions .play-consent {
+    font-size: 11px;
+    margin-bottom: 9px;
+  }
+}
+@media (max-width: 760px) {
+  .welcome-intro > p {
+    font-size: 13px;
+  }
+  .worldo-game .welcome-card {
+    max-height: calc(100dvh - 32px);
+  }
+}
+@media (max-width: 380px) and (max-height: 700px) {
+  .worldo-game .welcome-card {
+    gap: 10px;
+  }
+  .worldo-game .welcome-logo {
+    width: 115px;
+    max-height: 72px;
+  }
+  .worldo-game .welcome-card h1 {
+    font-size: 40px;
+  }
+  .welcome-intro > p {
+    font-size: 12px;
+    margin: 10px 0;
+  }
+  .worldo-game .welcome-cities {
+    gap: 10px;
+  }
+  html[lang='ar'] .worldo-game .welcome-card h1,
+  html[lang='hi'] .worldo-game .welcome-card h1 {
+    font-size: 32px;
+  }
+}
+.play-permission-details {
+  margin: 12px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  text-align: start;
+}
+.play-permission-details summary {
+  cursor: pointer;
+  color: var(--brass);
+  text-underline-offset: 3px;
+}
+.play-permission-details summary:hover {
+  text-decoration: underline;
+}
+.play-permission-details summary:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 4px;
+}
+.play-permission-details p {
+  font-size: 11px;
+  margin-top: 9px;
+  max-width: 48ch;
+}
+.pending-ribbon {
+  flex-wrap: wrap;
+  justify-content: center;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+}
+.pending-ribbon .quiet-button {
+  font-size: 11px;
+  min-height: 36px;
+  padding: 6px 10px;
+}

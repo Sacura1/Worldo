@@ -1,0 +1,28 @@
+{
+  "oraclePublicKey": "ed25519:6WXt82DfvPVMcfWXthPPYcsp2zfj79B9sfKXWvKXH88e",
+  "authorization": "{\"accountId\":\"alice.testnet\",\"contractId\":\"worldo.testnet\",\"network\":\"testnet\",\"expiresAt\":2593000000,\"spendLimit\":100000,\"createdAt\":1000000}",
+  "authorizationSignature": "oi1tnzvzjZhn+bvbvlhWrLwGsu94tyU8l1sNophsQnxRC5lfDL4y8/pNtxJsZmFhPtLtHq9iTF1jK2rPGESmBQ==",
+  "mayors": [
+    {
+      "account_id": "refinery.testnet",
+      "public_key": "ed25519:Enk73dXUhWV6wEGjQ4xRsu8qbLUkBKJ9Ps8TQSM1Q5un",
+      "signature": "PzkoxYHCqbSYqZg6Qkcxs0vqhoAuC/+egd+iXAajQ5HGHam5gChdrnPN12vHkhLQ2kLxv4QOIEWpxdWrPbLSAA=="
+    },
+    {
+      "account_id": "motor.testnet",
+      "public_key": "ed25519:EtHzXuMTyPhRAiD6fZ5ncEiV1ACEkffjqtGGk2DwU16t",
+      "signature": "bH5R7+hTgqqEtwgtEp6l3MDO5xrUqh0Ddwymq2URXb28hXae/FebcQhesgUFrY9JGKfthDNfs9G4O+8dWdI5AA=="
+    },
+    {
+      "account_id": "harbor.testnet",
+      "public_key": "ed25519:5KVsmzezkE5wYzdYzL2mT8LtgkG1su5HtyvtctdAQvqE",
+      "signature": "lw1GwvYR8TfYz8HyjvuvUb4z9Tw0zbZswWFyS5pFbKg4UPr7fUANm5Pj8RFjDJXrFtV96FExWxhtjOPkGZqIBQ=="
+    }
+  ],
+  "batch": "{\"createdAt\":1000000,\"id\":\"signed-batch-1234\",\"plans\":[{\"accountId\":\"alice.testnet\",\"action\":\"register\",\"burns\":[],\"createdAt\":1000000,\"expiresAt\":1120000,\"id\":\"registration-1234\",\"metadata\":{\"authorizationAt\":1000000},\"mints\":[{\"amount\":1,\"reason\":\"starter\",\"to\":\"alice.testnet\",\"tokenId\":\"equipment:alice.testnet:hand_pump:0\"},{\"amount\":1,\"reason\":\"starter\",\"to\":\"alice.testnet\",\"tokenId\":\"equipment:alice.testnet:tapping_knife:0\"},{\"amount\":1,\"reason\":\"starter\",\"to\":\"alice.testnet\",\"tokenId\":\"equipment:alice.testnet:axe:0\"},{\"amount\":1,\"reason\":\"starter\",\"to\":\"alice.testnet\",\"tokenId\":\"equipment:alice.testnet:hand_cart:0\"}],\"nonce\":1,\"stationEffects\":[],\"transfers\":[{\"amount\":100,\"from\":\"worldo.testnet\",\"to\":\"alice.testnet\",\"tokenId\":\"coin\"}]}],\"previousSequence\":0,\"sequence\":1}",
+  "hash": "1f56af934be3f58ff7f807d0fdef92a90b3488178815d902c30049e8981cd318",
+  "revocation0": "{\"accountId\":\"alice.testnet\",\"contractId\":\"worldo.testnet\",\"network\":\"testnet\",\"authorizedAt\":1000000,\"lastAcceptedNonce\":0,\"createdAt\":1000000}",
+  "revocationSignature0": "cZeJ+ezWRC7eonPga8y9+hW1XwpwzI/lE/U+K7VCmVJsTKGsxWOEcQ2rAbfTD/NzPbs012FRqWiXuB7kbld9Cw==",
+  "revocation1": "{\"accountId\":\"alice.testnet\",\"contractId\":\"worldo.testnet\",\"network\":\"testnet\",\"authorizedAt\":1000000,\"lastAcceptedNonce\":1,\"createdAt\":1000000}",
+  "revocationSignature1": "p94gzVMrcFqL6T7kQnFIMe+ByO62LNeYKAw8eW2Nm9DnU/n5nVjYDFFZ2eLU4uKqs/rhEs14L5w11jCvWCphAg=="
+}

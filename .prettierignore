@@ -1,0 +1,8 @@
+node_modules
+dist
+.local
+contracts
+public
+package-lock.json
+src/locales/*.ts
+src/locales/*.json
