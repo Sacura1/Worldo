@@ -208,6 +208,8 @@ export interface MayorPolicy {
   bountyPremium: number;
   wageRate: number;
   fuelReserve: number;
+  /** Scales every everyday price the city pays and charges. */
+  priceRate: number;
   note: string;
   source: 'rules' | 'near-ai';
   decidedAt: number;

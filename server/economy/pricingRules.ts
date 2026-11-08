@@ -25,14 +25,24 @@ export const cityAccepts = (id: CityId, resource: Resource) =>
       ? resource === 'crude_oil'
       : resource === 'rubber' || resource === 'wood';
 
-/** A bid rises with scarce stock, prolonged demand and a struggling city.
+const MAX_SCARCITY = 2.1;
+const MIN_SCARCITY = 0.65;
+/** Below its target a city's premium falls in a straight line as stock arrives, so
+ * even a first cart moves the price. Above the target it eases down to the minimum. */
+function scarcityOf(stock: number, target: number) {
+  return stock < target ? MAX_SCARCITY - (MAX_SCARCITY - 1) * (stock / target) : Math.max(MIN_SCARCITY, target / stock);
+}
+/** A bid rises with scarce stock, prolonged demand and a struggling city, and each
+ * mayor can tilt it inside POLICY_LIMITS.priceRate.
  * Recovery reserves may only buy the inputs needed to restart the city. */
 export function unitPrice(city: CityState, resource: Resource, side: 'buy' | 'sell'): number {
   const target = CITIES[city.id].targetStock[resource] || 40;
-  const scarcity = clamp(target / Math.max(city.stock[resource], target / 3), 0.65, 2.1);
+  const scarcity = scarcityOf(city.stock[resource], target);
   const urgency = city.state === 'dark' || city.state === 'struggling' ? 1.2 : 1;
   const momentum = clamp(1 + city.demand[resource] * 0.012, 0.9, 1.2);
-  const bid = Math.max(1, Math.round(BASE_PRICES[resource] * scarcity * urgency * momentum));
+  // A save from before this setting has no rate until its world next loads.
+  const mayorRate = city.policy?.priceRate ?? 1;
+  const bid = Math.max(1, Math.round(BASE_PRICES[resource] * scarcity * urgency * momentum * mayorRate));
   // Petrol's retail floor covers two crude inputs yielding three petrol, plus freight.
   const refiningCost = Math.max(Math.ceil((unitCrudeCost(city) * 2) / 3) + 2, Math.ceil(city.fuelCostBasis ?? 0) + 1);
   return side === 'buy'
@@ -44,9 +54,7 @@ export function unitPrice(city: CityState, resource: Resource, side: 'buy' | 'se
 }
 function unitCrudeCost(city: CityState) {
   const target = CITIES.refinery.targetStock.crude_oil;
-  return Math.round(
-    BASE_PRICES.crude_oil * clamp(target / Math.max(city.stock.crude_oil, target / 3), 0.65, 2.1) * 1.2,
-  );
+  return Math.round(BASE_PRICES.crude_oil * scarcityOf(city.stock.crude_oil, target) * 1.2);
 }
 /** Each unit moves the stock, so a big order walks the price as it fills.
  * Flooding a market makes it cheap inside the same order, not only afterwards. */

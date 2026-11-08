@@ -9,13 +9,24 @@ import {GoodsIcon, Money, RESOURCE_LABELS, Meter} from './ui';
 /** Rule-based notes have translations. A NEAR AI note is shown exactly as written. */
 export function MayorDecision({city}: {city: GameSnapshot['world']['cities'][CityId]}) {
   const {t} = useI18n(),
-    ai = city.policy.source === 'near-ai';
+    ai = city.policy.source === 'near-ai',
+    priceChange = Math.round((city.policy.priceRate - 1) * 100);
   return (
     <div className={`mayor-decision ${ai ? 'ai' : ''}`}>
       <Landmark size={17} />
       <div>
         <span className="eyebrow">{t('Mayor decision')}</span>
         <p dir="auto">{ai ? city.policy.note : t(city.policy.note)}</p>
+        {priceChange ? (
+          <small className="mayor-price-change">
+            {t(
+              priceChange > 0
+                ? 'This decision raises everyday prices by {percent}%.'
+                : 'This decision lowers everyday prices by {percent}%.',
+              {percent: Math.abs(priceChange)},
+            )}
+          </small>
+        ) : null}
         <small>{t(ai ? 'Decided with NEAR AI' : 'Decided by city rules')}</small>
       </div>
     </div>

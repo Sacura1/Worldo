@@ -102,6 +102,7 @@ export function initializeOwnership(data: WorldData): WorldData {
     city.supplyReservedCoins ??= 0;
     city.lastContractAt ??= 0;
     city.policy ??= defaultPolicy(data.world.simulatedAt);
+    city.policy.priceRate ??= 1;
     city.importedLitres ??= 0;
     city.lastImportNoteAt ??= 0;
     for (const driver of city.drivers) driver.litresWanted = DRIVER_FILL_LITRES;

@@ -11,6 +11,7 @@ import {
 } from '../server/economy/index';
 import {simulateWeek} from '../server/economy/preview';
 import {POLICY_LIMITS, boundedPolicy} from '../server/economy/mayorPolicy';
+import {unitPrice} from '../server/economy/pricingRules';
 import {compactOutbox} from '../shared/batches';
 import {CITY_IDS, DAY_LENGTH_MS, SIM_TICK_MS} from '../shared/config/cities';
 import {WORLD_EVENT_KINDS, nextWorldEvent} from '../shared/config/events';
@@ -206,15 +207,52 @@ describe('small fixes that protect the chain and the market', () => {
     expect(flood.lastUnitPrice).toBeLessThan(flood.firstUnitPrice);
   });
 
+  it('moves the price with an ordinary cart, even in a city that has run dry', () => {
+    const data = fresh();
+    data.world.cities.refinery.stock.crude_oil = 0;
+    const cart = quoteTrade(data, 'refinery', 'crude_oil', 'sell', 20);
+    expect(cart.lastUnitPrice).toBeLessThan(cart.firstUnitPrice);
+  });
+
+  it('lowers a price with every delivery until the city reaches its target', () => {
+    const city = fresh().world.cities.refinery;
+    const prices = [0, 20, 40, 60, 80].map(crude_oil =>
+      unitPrice({...city, stock: {...city.stock, crude_oil}}, 'crude_oil', 'buy'),
+    );
+    for (let i = 1; i < prices.length; i++) expect(prices[i]).toBeLessThan(prices[i - 1]);
+  });
+
+  it('lets a mayor tilt everyday prices, only inside the limit', () => {
+    const city = fresh().world.cities.motor;
+    const steady = unitPrice(city, 'petrol', 'buy');
+    city.policy.priceRate = POLICY_LIMITS.priceRate.max;
+    expect(unitPrice(city, 'petrol', 'buy')).toBeGreaterThan(steady);
+    city.policy.priceRate = POLICY_LIMITS.priceRate.min;
+    expect(unitPrice(city, 'petrol', 'buy')).toBeLessThan(steady);
+  });
+
+  it('gives a world saved before the price setting a neutral rate', () => {
+    const data = fresh();
+    delete (data.world.cities.motor.policy as {priceRate?: number}).priceRate;
+    expect(advanceWorld(data, now + SIM_TICK_MS, 'tick:old-save').data.world.cities.motor.policy.priceRate).toBe(1);
+  });
+
   it('never lets a mayor decision leave its limits', () => {
     const wild = boundedPolicy(
-      {bountyPremium: 90, wageRate: -4, fuelReserve: 1000, note: `  raise <b>wages</b>\n${'x'.repeat(500)}`},
+      {
+        bountyPremium: 90,
+        wageRate: -4,
+        fuelReserve: 1000,
+        priceRate: 9,
+        note: `  raise <b>wages</b>\n${'x'.repeat(500)}`,
+      },
       now,
       'near-ai',
     );
     expect(wild.bountyPremium).toBe(POLICY_LIMITS.bountyPremium.max);
     expect(wild.wageRate).toBe(POLICY_LIMITS.wageRate.min);
     expect(wild.fuelReserve).toBe(POLICY_LIMITS.fuelReserve.max);
+    expect(wild.priceRate).toBe(POLICY_LIMITS.priceRate.max);
     expect(wild.note.length).toBeLessThanOrEqual(160);
     expect(wild.note).not.toMatch(/[<>]/);
     expect(boundedPolicy({bountyPremium: Number.NaN}, now, 'near-ai').bountyPremium).toBe(1.5);

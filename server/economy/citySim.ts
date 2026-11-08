@@ -403,6 +403,7 @@ export function advanceWorld(
           bountyPremium: w.cities[id].policy.bountyPremium,
           wageRate: w.cities[id].policy.wageRate,
           fuelReserve: w.cities[id].policy.fuelReserve,
+          priceRate: w.cities[id].policy.priceRate,
         },
         worldEvent: w.event?.kind ?? null,
         contracts: w.supplyContracts

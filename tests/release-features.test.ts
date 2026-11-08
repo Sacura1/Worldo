@@ -101,7 +101,7 @@ describe('mayor decisions', () => {
   it('reads a NEAR AI proposal, and the economy clamps it', async () => {
     process.env.NEAR_AI_API_KEY = 'fixture';
     const {instance} = council(
-      'Thinking done. {"bountyPremium":9,"wageRate":0.1,"fuelReserve":12,"note":"Pay more for fuel."}',
+      'Thinking done. {"bountyPremium":9,"wageRate":0.1,"fuelReserve":12,"priceRate":4,"note":"Pay more for fuel."}',
     );
     const data = joined();
     const proposal = await instance.propose(data, 'refinery');
@@ -113,6 +113,7 @@ describe('mayor decisions', () => {
       bountyPremium: 2,
       wageRate: 0.6,
       fuelReserve: 12,
+      priceRate: 1.15,
       source: 'near-ai',
       note: 'Pay more for fuel.',
     });
@@ -127,12 +128,23 @@ describe('mayor decisions', () => {
     delete process.env.NEAR_AI_API_KEY;
   });
 
+  it('asks for a fresh choice instead of handing the AI its current settings', async () => {
+    process.env.NEAR_AI_API_KEY = 'fixture';
+    const {instance, providers} = council('{"priceRate":1.1,"note":"Paying a little more."}');
+    await instance.propose(joined(), 'motor');
+    const [, chat] = vi.mocked(providers.chat).mock.calls[0];
+    expect(chat[1].content).not.toContain('currentSettings');
+    expect(chat[0].content).toContain('priceRate');
+    delete process.env.NEAR_AI_API_KEY;
+  });
+
   it('publishes a new decision in the next tick, even if nothing else changed', () => {
     const data = applyMayorDecision(joined(), 'harbor', {note: 'Holding steady.', wageRate: 1}).data;
     const {plan, data: next} = advanceWorld(data, now + 5000, 'tick:decision');
     expect(plan?.metadata.requiresSync).toBe(true);
     expect(JSON.parse(String(plan?.metadata.mayorRecords))[2].decision).toMatchObject({
       note: 'Holding steady.',
+      priceRate: 1,
       source: 'near-ai',
     });
     expect(next.world.cities.harbor.policy.published).toBe(true);

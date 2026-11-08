@@ -3155,6 +3155,12 @@ html[lang='hi'] h3 {
   color: var(--muted);
   font-size: 10px;
 }
+.mayor-decision .mayor-price-change {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 11px;
+  color: var(--brass);
+}
 .price-move {
   display: block;
   color: var(--brass);

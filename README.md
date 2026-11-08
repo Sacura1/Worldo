@@ -28,7 +28,7 @@ npm ci
 npm run dev:local
 ```
 
-Open http://localhost:3000 and press the play button. The full game runs in a local save. NEAR settlement and NEAR AI need keys, so they are off and mayors use scripted replies. `npm run demo` starts the storm scene from the video, and `npm test` runs the tests. To run it on NEAR testnet with your own accounts, see [docs/worldo.md](docs/worldo.md).
+Open http://localhost:3000 and press the play button. The full game runs in a local save. NEAR settlement and NEAR AI need keys, so they are off and mayors use scripted replies. `npm run demo` starts the storm scene, and `npm test` runs the tests. To run it on NEAR testnet with your own accounts, see [docs/worldo.md](docs/worldo.md).
 
 ## How to play
 
@@ -46,7 +46,7 @@ W and S walk, A and D turn (the arrow keys work too), and dragging looks around.
 | --- | --- |
 | Simple social login: sign in with Google or email through NEAR Auth, with no seed phrase | [near-login.ts](server/near-login.ts) |
 | Each mayor is a NEAR account with its own coins and goods | `account` and `apply_batch` in [lib.rs](contracts/src/lib.rs) |
-| Mayors set wages, bounties and fuel reserves with NEAR AI, within fixed limits. Each decision and its reason goes on chain | [mayor-council.ts](server/mayor-council.ts), [mayorPolicy.ts](server/economy/mayorPolicy.ts) |
+| While someone is playing, mayors use NEAR AI to set wages, bounties, fuel reserves and a price adjustment of up to 15%, within fixed limits. Their built-in rules decide the rest of the time. Each decision and its reason goes on chain | [mayor-council.ts](server/mayor-council.ts), [mayorPolicy.ts](server/economy/mayorPolicy.ts) |
 | Talk to the mayors in your own language, with ElevenLabs voices | [npc.ts](server/npc.ts), [npc-providers.ts](server/npc-providers.ts) |
 | Player-owned petrol stations compete with the mayors for drivers | [stations.ts](server/economy/stations.ts), [driverChoice.ts](server/economy/driverChoice.ts) |
 | Storms, refinery faults, festivals, oil booms and cold snaps hit the economy on their own | [citySim.ts](server/economy/citySim.ts), [events.ts](shared/config/events.ts) |
@@ -56,7 +56,7 @@ W and S walk, A and D turn (the arrow keys work too), and dragging looks around.
 | A simulated week in a minute at `/?ff=1` | [preview.ts](server/economy/preview.ts) |
 | Ten languages | [languages.ts](shared/languages.ts) |
 | No wallet pop-ups or gas. A sponsored worker settles actions in batches | [city-controller.ts](server/city-controller.ts), [relayer.ts](server/relayer.ts) |
-| Coins, goods, equipment and station deeds are NEP-245 tokens in one contract | [lib.rs](contracts/src/lib.rs) |
+| Coins, goods, equipment and station deeds are NEP-245 tokens in one contract. They move only through game settlement, so direct wallet transfers are blocked | [lib.rs](contracts/src/lib.rs) |
 
 ## How NEAR is used
 
@@ -68,8 +68,8 @@ W and S walk, A and D turn (the arrow keys work too), and dragging looks around.
 ## Testnet transactions
 
 - [Contract deployment](https://testnet.nearblocks.io/txns/2iJdmZfuaStiPmMahWWFxkhL698Ai9vCHGKcmc9WjhGg)
-- [Sponsored permission grant](https://testnet.nearblocks.io/txns/GK8urtjaSsGeVXv8tZGjDf7FxeMxMxxz4oh7D5CkXNCF)
-- [A mayor trade with its `mayor_decisions` event](https://testnet.nearblocks.io/txns/HQAdGwzzDqSispjpsfLCTZ3PWS5sLnmdRAGMaYVD6mNe)
+- [Sponsored permission grant](https://testnet.nearblocks.io/txns/BCXn8NfbWRZ3rdX7NqCexZPfhi4KG3ByujoRdhzuaKXL)
+- [NEAR AI mayor decisions and their reasons in a `mayor_decisions` event](https://testnet.nearblocks.io/txns/94P4S4x4ooEbZoFESYCSr1cNFWyV24BfVDChgh7gvbaA)
 - [Permission revocation](https://testnet.nearblocks.io/txns/3fiMFzvpgMFvyae1uwgpx9xGBKbWaupB18UBzvqq8g6V)
 
 ## Built with
